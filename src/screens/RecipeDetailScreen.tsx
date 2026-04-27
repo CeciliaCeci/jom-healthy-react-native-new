@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -14,7 +15,8 @@ import { Header, Screen } from '../components/Common';
 import { colors } from '../theme/colors';
 
 function round(value?: number) {
-  return Math.round(Number(value || 0));
+  const num = Number(value || 0);
+  return Math.round(Number.isFinite(num) ? num : 0);
 }
 
 export default function RecipeDetailScreen() {
@@ -61,16 +63,36 @@ export default function RecipeDetailScreen() {
     .filter(Boolean);
 
   const openYoutube = async () => {
-    if (!meal.strYoutube) return;
+    if (!meal.strYoutube) {
+      Alert.alert('No Tutorial', 'This recipe does not have a tutorial link.');
+      return;
+    }
 
     try {
       const canOpen = await Linking.canOpenURL(meal.strYoutube);
 
       if (canOpen) {
-        Linking.openURL(meal.strYoutube);
+        await Linking.openURL(meal.strYoutube);
+      } else {
+        Alert.alert('Cannot Open Link', 'Unable to open the tutorial link.');
       }
     } catch (error) {
       console.log('Open YouTube failed:', error);
+      Alert.alert('Error', 'Unable to open the tutorial link.');
+    }
+  };
+
+  const openSource = async () => {
+    if (!meal.strSource) return;
+
+    try {
+      const canOpen = await Linking.canOpenURL(meal.strSource);
+
+      if (canOpen) {
+        await Linking.openURL(meal.strSource);
+      }
+    } catch (error) {
+      console.log('Open source failed:', error);
     }
   };
 
@@ -157,14 +179,17 @@ export default function RecipeDetailScreen() {
             <Text style={styles.mutedText}>No ingredients available.</Text>
           ) : (
             ingredients.map((item: any, index: number) => (
-              <View key={`${item.ingredientName}-${index}`} style={styles.ingredientRow}>
+              <View
+                key={`${item.ingredientName || item.foodNameEn}-${index}`}
+                style={styles.ingredientRow}
+              >
                 <View style={styles.ingredientNumber}>
                   <Text style={styles.ingredientNumberText}>{index + 1}</Text>
                 </View>
 
                 <View style={styles.ingredientInfo}>
                   <Text style={styles.ingredientName}>
-                    {item.foodNameEn || item.ingredientName}
+                    {item.foodNameEn || item.ingredientName || '-'}
                   </Text>
 
                   <Text style={styles.ingredientMeasure}>
@@ -207,6 +232,13 @@ export default function RecipeDetailScreen() {
           <Pressable style={styles.youtubeButton} onPress={openYoutube}>
             <Ionicons name="logo-youtube" size={22} color="#FFFFFF" />
             <Text style={styles.youtubeText}>Watch Tutorial</Text>
+          </Pressable>
+        )}
+
+        {!!meal.strSource && (
+          <Pressable style={styles.sourceButton} onPress={openSource}>
+            <Ionicons name="open-outline" size={20} color={colors.primaryDark} />
+            <Text style={styles.sourceText}>Open Recipe Source</Text>
           </Pressable>
         )}
       </ScrollView>
@@ -451,5 +483,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '900',
     fontSize: 16,
+  },
+
+  sourceButton: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 20,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  sourceText: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+    fontSize: 15,
   },
 });

@@ -1,5 +1,12 @@
 const API_BASE_URL = 'https://jom-healthy-java.onrender.com';
 
+export type NutritionNeeds = {
+  calories: number;
+  carbs: number;
+  protein: number;
+  fat: number;
+};
+
 export type ApiResult<T> =
   | {
       ok: true;
