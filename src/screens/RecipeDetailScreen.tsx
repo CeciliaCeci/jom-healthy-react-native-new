@@ -1,103 +1,455 @@
-import React, { useState } from 'react';
-import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import {
+  Image,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useChildProfile } from '../context/ChildProfileContext';
+import { Header, Screen } from '../components/Common';
 import { colors } from '../theme/colors';
-import { Card, Header, PrimaryButton, Screen, SecondaryButton, SectionTitle } from '../components/Common';
 
-const mealIcons = { breakfast: '🍳', lunch: '🍱', dinner: '🍲', snack: '🥤' } as const;
+function round(value?: number) {
+  return Math.round(Number(value || 0));
+}
 
 export default function RecipeDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { addSavedRecipe, removeSavedRecipe, isRecipeSaved } = useChildProfile();
   const meal = route.params?.meal;
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  if (!meal) return <Screen><Text style={{ color: colors.muted }}>Recipe not found</Text></Screen>;
+  if (!meal) {
+    return (
+      <Screen padded={false}>
+        <Header
+          title="Recipe Detail"
+          subtitle="Not found"
+          icon="restaurant"
+          onBack={() => navigation.goBack()}
+        />
 
-  const image = meal.imageUrl || 'https://images.unsplash.com/photo-1600289031464-74d374b64991?w=800&h=400&fit=crop';
-  const saved = isRecipeSaved(meal.id);
-  const openVideo = () => Linking.openURL(`https://www.youtube.com/results?search_query=${encodeURIComponent(`how to cook ${meal.name}`)}`);
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>Recipe not found.</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  const ingredients = Array.isArray(meal.ingredients)
+    ? meal.ingredients
+    : Array.from({ length: 20 })
+        .map((_, index) => {
+          const ingredient = meal[`strIngredient${index + 1}`];
+          const measure = meal[`strMeasure${index + 1}`];
+
+          if (!ingredient) return null;
+
+          return {
+            ingredientName: ingredient,
+            measure,
+          };
+        })
+        .filter(Boolean);
+
+  const instructionSteps = String(meal.strInstructions || '')
+    .split(/\r?\n/)
+    .map((step) => step.trim())
+    .filter(Boolean);
+
+  const openYoutube = async () => {
+    if (!meal.strYoutube) return;
+
+    try {
+      const canOpen = await Linking.canOpenURL(meal.strYoutube);
+
+      if (canOpen) {
+        Linking.openURL(meal.strYoutube);
+      }
+    } catch (error) {
+      console.log('Open YouTube failed:', error);
+    }
+  };
 
   return (
     <Screen padded={false}>
-      <Header title="Recipe Detail" subtitle="Step-by-step cooking guide" icon="book" onBack={() => navigation.goBack()} />
-      <Image source={{ uri: image }} style={styles.hero} />
-      <View style={styles.body}>
-        <Card>
-          <View style={styles.titleRow}>
-            <Text style={styles.mealIcon}>{mealIcons[meal.type as keyof typeof mealIcons] || '🍽️'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>{meal.name}</Text>
-              <Text style={styles.sub}>{meal.carbs}g carbs · {meal.protein}g protein · {meal.fat}g fat</Text>
-            </View>
-            <Pressable
-              style={[styles.saveButton, saved && styles.saveButtonActive]}
-              onPress={() => (saved ? removeSavedRecipe(meal.id) : addSavedRecipe(meal))}
-            >
-              <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? 'white' : colors.primaryDark} />
-            </Pressable>
-          </View>
-        </Card>
+      <Header
+        title="Recipe Detail"
+        subtitle={meal.strCategory || 'Meal'}
+        icon="restaurant"
+        onBack={() => navigation.goBack()}
+      />
 
-        <SectionTitle title="Ingredients" />
-        <Card>
-          {(meal.ingredients || []).map((item: any) => (
-            <Pressable key={item.name} onPress={() => setChecked((prev) => ({ ...prev, [item.name]: !prev[item.name] }))} style={styles.ingredientRow}>
-              <View style={[styles.check, checked[item.name] && styles.checkDone]}>{checked[item.name] && <Ionicons name="checkmark" color="white" size={15} />}</View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.ingredientName, checked[item.name] && styles.doneText]}>{item.name}</Text>
-                <Text style={styles.quantity}>{item.quantity}</Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.heroCard}>
+          {meal.strMealThumb ? (
+            <Image source={{ uri: meal.strMealThumb }} style={styles.heroImage} />
+          ) : (
+            <View style={styles.heroFallback}>
+              <Text style={styles.heroEmoji}>🍽️</Text>
+            </View>
+          )}
+
+          <View style={styles.heroContent}>
+            <Text style={styles.title}>{meal.strMeal}</Text>
+
+            <Text style={styles.meta}>
+              {meal.strCategory || 'Recipe'} · {meal.strArea || 'Meal'}
+            </Text>
+
+            {!!meal.strTags && (
+              <View style={styles.tagsRow}>
+                {String(meal.strTags)
+                  .split(',')
+                  .slice(0, 4)
+                  .map((tag: string) => (
+                    <View key={tag} style={styles.tag}>
+                      <Text style={styles.tagText}>{tag.trim()}</Text>
+                    </View>
+                  ))}
               </View>
-              <Text style={styles.category}>{item.category}</Text>
-            </Pressable>
-          ))}
-        </Card>
-
-        <SectionTitle title="Cooking Steps" />
-        <Card>
-          {(meal.steps || []).map((step: string, index: number) => (
-            <View key={`${step}-${index}`} style={styles.stepRow}>
-              <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>
-              <Text style={styles.stepText}>{step}</Text>
-            </View>
-          ))}
-        </Card>
-
-        <Card>
-          <Text style={styles.videoTitle}>Watch Tutorial</Text>
-          <View style={styles.buttonsRow}>
-            <SecondaryButton title={saved ? 'Saved' : 'Save Recipe'} icon={saved ? 'bookmark' : 'bookmark-outline'} onPress={() => (saved ? removeSavedRecipe(meal.id) : addSavedRecipe(meal))} style={{ flex: 1 }} />
-            <PrimaryButton title="Watch Tutorial" icon="logo-youtube" onPress={openVideo} style={{ flex: 1 }} />
+            )}
           </View>
-        </Card>
-      </View>
+        </View>
+
+        <View style={styles.nutritionCard}>
+          <Text style={styles.sectionTitle}>Nutrition Summary</Text>
+
+          <View style={styles.nutritionGrid}>
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>
+                {round(meal.totalEnergyKcal)}
+              </Text>
+              <Text style={styles.nutritionLabel}>kcal</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>
+                {round(meal.totalProteinG)}g
+              </Text>
+              <Text style={styles.nutritionLabel}>Protein</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>
+                {round(meal.totalCarbohydrateG)}g
+              </Text>
+              <Text style={styles.nutritionLabel}>Carbs</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>{round(meal.totalFatG)}g</Text>
+              <Text style={styles.nutritionLabel}>Fat</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Ingredients</Text>
+
+          {ingredients.length === 0 ? (
+            <Text style={styles.mutedText}>No ingredients available.</Text>
+          ) : (
+            ingredients.map((item: any, index: number) => (
+              <View key={`${item.ingredientName}-${index}`} style={styles.ingredientRow}>
+                <View style={styles.ingredientNumber}>
+                  <Text style={styles.ingredientNumberText}>{index + 1}</Text>
+                </View>
+
+                <View style={styles.ingredientInfo}>
+                  <Text style={styles.ingredientName}>
+                    {item.foodNameEn || item.ingredientName}
+                  </Text>
+
+                  <Text style={styles.ingredientMeasure}>
+                    {item.measure ||
+                      (item.gramsEstimated !== undefined
+                        ? `${item.gramsEstimated}g`
+                        : '-')}
+                  </Text>
+                </View>
+
+                {item.energyKcal !== undefined && (
+                  <Text style={styles.ingredientCalories}>
+                    {round(item.energyKcal)} kcal
+                  </Text>
+                )}
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Instructions</Text>
+
+          {instructionSteps.length === 0 ? (
+            <Text style={styles.mutedText}>No instructions available.</Text>
+          ) : (
+            instructionSteps.map((step, index) => (
+              <View key={`${step}-${index}`} style={styles.stepRow}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>{index + 1}</Text>
+                </View>
+
+                <Text style={styles.stepText}>{step}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        {!!meal.strYoutube && (
+          <Pressable style={styles.youtubeButton} onPress={openYoutube}>
+            <Ionicons name="logo-youtube" size={22} color="#FFFFFF" />
+            <Text style={styles.youtubeText}>Watch Tutorial</Text>
+          </Pressable>
+        )}
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { width: '100%', height: 220, backgroundColor: colors.bg },
-  body: { padding: 20, gap: 12, paddingBottom: 34 },
-  titleRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  mealIcon: { fontSize: 42 },
-  title: { color: colors.text, fontWeight: '900', fontSize: 20 },
-  sub: { color: colors.muted, marginTop: 6 },
-  saveButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  saveButtonActive: { backgroundColor: colors.primaryDark },
-  ingredientRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  check: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
-  checkDone: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
-  ingredientName: { color: colors.text, fontWeight: '800' },
-  quantity: { color: colors.muted, marginTop: 3, fontSize: 12 },
-  category: { color: colors.primaryDark, backgroundColor: colors.primaryLight, overflow: 'hidden', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
-  doneText: { textDecorationLine: 'line-through', color: colors.muted },
-  stepRow: { flexDirection: 'row', gap: 12, paddingVertical: 10 },
-  stepNumber: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primaryDark, alignItems: 'center', justifyContent: 'center' },
-  stepNumberText: { color: 'white', fontWeight: '900' },
-  stepText: { flex: 1, color: colors.text, lineHeight: 21 },
-  videoTitle: { color: colors.text, fontWeight: '900', fontSize: 18, marginBottom: 12 },
-  buttonsRow: { flexDirection: 'row', gap: 10 },
+  content: {
+    padding: 20,
+    paddingBottom: 120,
+    gap: 18,
+  },
+
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  emptyText: {
+    color: colors.muted,
+    fontWeight: '800',
+  },
+
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+
+  heroImage: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#E5E7EB',
+  },
+
+  heroFallback: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#EAF7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  heroEmoji: {
+    fontSize: 64,
+  },
+
+  heroContent: {
+    padding: 20,
+  },
+
+  title: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  meta: {
+    marginTop: 6,
+    color: colors.muted,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  tagsRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  tag: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+
+  tagText: {
+    color: colors.primaryDark,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  nutritionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 14,
+  },
+
+  nutritionGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  nutritionItem: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+
+  nutritionValue: {
+    color: colors.text,
+    fontWeight: '900',
+    fontSize: 15,
+  },
+
+  nutritionLabel: {
+    marginTop: 4,
+    color: colors.muted,
+    fontSize: 11,
+  },
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+
+  mutedText: {
+    color: colors.muted,
+    fontWeight: '700',
+  },
+
+  ingredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+
+  ingredientNumber: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  ingredientNumberText: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+    fontSize: 12,
+  },
+
+  ingredientInfo: {
+    flex: 1,
+  },
+
+  ingredientName: {
+    color: colors.text,
+    fontWeight: '800',
+  },
+
+  ingredientMeasure: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+  },
+
+  ingredientCalories: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+    fontSize: 12,
+  },
+
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  stepNumberText: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+    fontSize: 12,
+  },
+
+  stepText: {
+    flex: 1,
+    color: colors.text,
+    lineHeight: 21,
+  },
+
+  youtubeButton: {
+    backgroundColor: '#EF4444',
+    borderRadius: 20,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    shadowColor: '#EF4444',
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+
+  youtubeText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 16,
+  },
 });

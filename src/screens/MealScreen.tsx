@@ -1,383 +1,1066 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useChildProfile } from '../context/ChildProfileContext';
-import { useLanguage } from '../context/LanguageContext';
+import { Header, Screen } from '../components/Common';
 import { colors } from '../theme/colors';
-import { Card, Chip, EmptyState, Header, IconButton, PrimaryButton, Screen, SecondaryButton, SectionTitle } from '../components/Common';
-import LanguageModal from '../components/LanguageModal';
-import { getFoodNutritionNeeds } from '../services/api';
+import { searchMeals } from '../services/api';
 
-const mealIcons = { breakfast: '🍳', lunch: '🍱', dinner: '🍲', snack: '🥤' } as const;
-const mealLabels = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' } as const;
+type Ingredient = {
+  ingredientId?: number;
+  mealId?: string;
+  ingredientOrder?: number;
+  ingredientName?: string;
+  measure?: string;
+  normalizedName?: string;
+  gramsEstimated?: number;
+  foodNameEn?: string;
+  foodNameCn?: string;
+  foodNameMs?: string;
+  energyKcal?: number;
+  proteinG?: number;
+  carbohydrateG?: number;
+  fatG?: number;
+};
 
-const pad2 = (value: number) => String(value).padStart(2, '0');
-const toDateKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-const fromDateKey = (dateString: string) => {
-  const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-const addDays = (dateString: string, days: number) => {
-  const date = fromDateKey(dateString);
-  date.setDate(date.getDate() + days);
-  return toDateKey(date);
+type MealRecipe = {
+  id: number;
+  idMeal: string;
+  strMeal: string;
+  strMealAlternate?: string | null;
+  strCategory?: string | null;
+  strArea?: string | null;
+  strInstructions?: string | null;
+  strMealThumb?: string | null;
+  strTags?: string | null;
+  strYoutube?: string | null;
+  strSource?: string | null;
+  totalEnergyKcal?: number;
+  totalProteinG?: number;
+  totalCarbohydrateG?: number;
+  totalFatG?: number;
+  ingredients?: Ingredient[];
+
+  [key: string]: any;
 };
 
-const getAgeMonths = (child: any) => {
-  if (child?.birthday) {
-    const parts = String(child.birthday).replace(/-/g, '/').split('/').map(Number);
-    if (parts.length === 3 && parts.every(Boolean)) {
-      const birthday = new Date(parts[0], parts[1] - 1, parts[2]);
-      const now = new Date();
-      let months = (now.getFullYear() - birthday.getFullYear()) * 12 + (now.getMonth() - birthday.getMonth());
-      if (now.getDate() < birthday.getDate()) months -= 1;
-      return Math.max(0, months);
-    }
-  }
-  return Math.max(0, Math.round(Number(child?.age || 0) * 12));
-};
+function formatDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, offset: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + offset);
+  return next;
+}
+
+function getSevenDays(centerDate: Date) {
+  return [-3, -2, -1, 0, 1, 2, 3].map((offset) =>
+    addDays(centerDate, offset)
+  );
+}
+
+function round(value?: number) {
+  return Math.round(Number(value || 0));
+}
+
+function getMonthDays(monthDate: Date) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+
+  const firstDay = new Date(year, month, 1);
+  const startWeekDay = firstDay.getDay();
+  const startDate = addDays(firstDay, -startWeekDay);
+
+  return Array.from({ length: 42 }).map((_, index) =>
+    addDays(startDate, index)
+  );
+}
 
 export default function MealScreen() {
   const navigation = useNavigation<any>();
-  const { language, t } = useLanguage();
-  const {
-    activeChild,
-    selectedDate,
-    setSelectedDate,
-    getMealsForDate,
-    generateNewMealPlan,
-    replaceMeal,
-    deleteMeal,
-    nutritionProgress,
-    setNutritionNeeds,
-  } = useChildProfile();
-  const [showLanguage, setShowLanguage] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [query, setQuery] = useState('');
-  const [loadingNeeds, setLoadingNeeds] = useState(false);
-  const [nutritionNeedsError, setNutritionNeedsError] = useState('');
-  const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
 
-  const dates = useMemo(() => {
-    return Array.from({ length: 7 }, (_, index) => {
-      const offset = index - 3;
-      const key = addDays(selectedDate, offset);
-      const date = fromDateKey(key);
-      return {
-        key,
-        day: date.toLocaleDateString('en-MY', { weekday: 'short' }),
-        date: date.getDate(),
-        isToday: key === toDateKey(new Date()),
-      };
-    });
-  }, [selectedDate]);
+  const today = useMemo(() => new Date(), []);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [calendarMonth, setCalendarMonth] = useState(today);
+  const [showCalendar, setShowCalendar] = useState(false);
 
-  const meals = getMealsForDate(selectedDate).filter((meal: any) => !query.trim() || meal.name.toLowerCase().includes(query.toLowerCase()));
+  const [keyword, setKeyword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [results, setResults] = useState<MealRecipe[]>([]);
 
-  useEffect(() => {
-    if (!activeChild) return;
-    let mounted = true;
+  const [mealPlans, setMealPlans] = useState<Record<string, MealRecipe[]>>({});
 
-    const loadNutritionNeeds = async () => {
-      setLoadingNeeds(true);
-      setNutritionNeedsError('');
+  const selectedKey = formatDateKey(selectedDate);
+  const todayKey = formatDateKey(today);
+  const dateMeals = mealPlans[selectedKey] || [];
 
-      const result = await getFoodNutritionNeeds({
-        heightCm: Number(activeChild.height),
-        weightKg: Number(activeChild.weight),
-        ageMonths: getAgeMonths(activeChild),
-        gender: activeChild.gender === 'boy' ? 1 : 2,
-      });
+  const dateTabs = useMemo(() => getSevenDays(selectedDate), [selectedDate]);
+  const calendarDays = useMemo(
+    () => getMonthDays(calendarMonth),
+    [calendarMonth]
+  );
 
-      if (!mounted) return;
+  const totals = useMemo(() => {
+    return dateMeals.reduce(
+      (acc, meal) => {
+        acc.calories += Number(meal.totalEnergyKcal || 0);
+        acc.protein += Number(meal.totalProteinG || 0);
+        acc.carbs += Number(meal.totalCarbohydrateG || 0);
+        acc.fat += Number(meal.totalFatG || 0);
+        return acc;
+      },
+      {
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      }
+    );
+  }, [dateMeals]);
 
-      if (!result.ok) {
-        setNutritionNeedsError(result.message);
-        setLoadingNeeds(false);
-        return;
+  const handleSearch = async () => {
+    const query = keyword.trim();
+
+    if (!query) {
+      setSearchError('Please enter a recipe keyword.');
+      return;
+    }
+
+    setLoading(true);
+    setSearchError('');
+
+    const result = await searchMeals(query);
+
+    if (!result.ok) {
+      setResults([]);
+      setSearchError(result.message);
+      setLoading(false);
+      return;
+    }
+
+    const list = Array.isArray(result.data?.data) ? result.data.data : [];
+    setResults(list);
+    setLoading(false);
+  };
+
+  const addMealToPlan = (meal: MealRecipe) => {
+    setMealPlans((prev) => {
+      const current = prev[selectedKey] || [];
+      const exists = current.some((item) => item.idMeal === meal.idMeal);
+
+      if (exists) {
+        return prev;
       }
 
-      setNutritionNeeds(result.data);
-      setLoadingNeeds(false);
-    };
-
-    loadNutritionNeeds();
-
-    return () => {
-      mounted = false;
-    };
-  }, [activeChild?.id, activeChild?.height, activeChild?.weight, activeChild?.birthday, activeChild?.age, activeChild?.gender]);
-
-
-  const watchTutorial = (mealName: string) => {
-    Linking.openURL(`https://www.youtube.com/results?search_query=${encodeURIComponent(`how to cook ${mealName}`)}`);
-  };
-
-  return (
-    <>
-      <Screen padded={false}>
-        <Header
-          title={t('mealPlan')}
-          subtitle={activeChild ? `${activeChild.nickname}'s meals` : t('basedOnPreferences')}
-          icon="restaurant"
-          right={
-            <Pressable style={styles.langButton} onPress={() => setShowLanguage(true)}>
-              <Text style={styles.langText}>{langCode}</Text>
-            </Pressable>
-          }
-        />
-        <View style={styles.body}>
-          {!activeChild ? (
-            <EmptyState emoji="🍱" title="Please Select or Create a Child Profile" subtitle="Go to Profile to create or select a child before generating meal plans." action={<PrimaryButton title="Go to Profile" onPress={() => navigation.navigate('Profile')} />} />
-          ) : (
-            <>
-              <Card>
-                <View style={styles.searchWrap}>
-                  <Ionicons name="search" size={18} color={colors.primaryDark} />
-                  <TextInput value={query} onChangeText={setQuery} placeholder={t('searchRecipes')} style={styles.searchInput} />
-                </View>
-              </Card>
-
-              <View style={styles.calendarRow}>
-                <Text style={styles.selectedDateText}>{fromDateKey(selectedDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
-                <Pressable style={styles.calendarButton} onPress={() => setShowDatePicker((prev) => !prev)}>
-                  <Ionicons name="calendar" size={18} color={colors.primaryDark} />
-                  <Text style={styles.calendarButtonText}>Calendar</Text>
-                </Pressable>
-              </View>
-
-              <CalendarModal
-                visible={showDatePicker}
-                selectedDate={selectedDate}
-                onClose={() => setShowDatePicker(false)}
-                onSelect={(dateKey) => {
-                  setSelectedDate(dateKey);
-                  setShowDatePicker(false);
-                }}
-              />
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.datesScroll}>
-                {dates.map((item) => (
-                  <Pressable key={item.key} onPress={() => setSelectedDate(item.key)} style={[styles.dateChip, selectedDate === item.key && styles.dateChipActive]}>
-                    <Text style={[styles.dateDay, selectedDate === item.key && styles.dateTextActive]}>{item.day}</Text>
-                    <Text style={[styles.dateNum, selectedDate === item.key && styles.dateTextActive]}>{item.date}</Text>
-                    {item.isToday && <Text style={[styles.todayText, selectedDate === item.key && styles.dateTextActive]}>Today</Text>}
-                  </Pressable>
-                ))}
-              </ScrollView>
-
-              <Card>
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Today's Nutrition</Text>
-                  {loadingNeeds ? <ActivityIndicator color={colors.primaryDark} /> : <Text style={styles.cardSubtitle}>API targets</Text>}
-                </View>
-                {!!nutritionNeedsError && (
-                  <View style={styles.inlineErrorBox}>
-                    <Ionicons name="wifi-outline" size={18} color="#EF4444" />
-                    <Text style={styles.inlineErrorText}>{nutritionNeedsError}</Text>
-                  </View>
-                )}
-                <View style={styles.nutritionGrid}>
-                  <NutritionItem label="Calories" current={Math.round(nutritionProgress.calories.current)} target={Math.round(nutritionProgress.calories.target)} unit="kcal" />
-                  <NutritionItem label="Carbs" current={Math.round(nutritionProgress.carbs.current)} target={Math.round(nutritionProgress.carbs.target)} unit="g" />
-                  <NutritionItem label="Protein" current={Math.round(nutritionProgress.protein.current)} target={Math.round(nutritionProgress.protein.target)} unit="g" />
-                  <NutritionItem label="Fat" current={Math.round(nutritionProgress.fat.current)} target={Math.round(nutritionProgress.fat.target)} unit="g" />
-                </View>
-              </Card>
-
-              <View style={styles.actionRow}>
-                <Text style={styles.subHeading}>{t('basedOnPreferences')}</Text>
-                <PrimaryButton title="Generate" icon="refresh" onPress={() => generateNewMealPlan(1, selectedDate)} style={styles.generateButton} />
-              </View>
-
-              {meals.length === 0 ? (
-                <EmptyState emoji="🍽️" title="No meal plan yet" subtitle="Tap Generate to create and save a meal plan for this date." />
-              ) : (
-                meals.map((meal: any) => (
-                  <Card key={meal.id} style={styles.mealCard}>
-                    <View style={styles.mealHeader}>
-                      <Text style={styles.mealIcon}>{mealIcons[meal.type as keyof typeof mealIcons]}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.mealType}>{mealLabels[meal.type as keyof typeof mealLabels]}</Text>
-                        <Text style={styles.mealName}>{meal.name}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.macroRow}>
-                      <Chip label={`${meal.carbs}g Carbs`} />
-                      <Chip label={`${meal.protein}g Protein`} />
-                      <Chip label={`${meal.fat}g Fat`} />
-                    </View>
-                    <View style={styles.buttonsRow}>
-                      <SecondaryButton title="View Recipe" icon="book" onPress={() => navigation.navigate('RecipeDetail', { meal, date: selectedDate })} style={{ flex: 1 }} />
-                      <SecondaryButton title="Replace" icon="swap-horizontal" onPress={() => replaceMeal(meal.id, selectedDate)} style={{ flex: 1 }} />
-                    </View>
-                    <View style={styles.buttonsRow}>
-                      <SecondaryButton title="Delete" icon="trash" onPress={() => deleteMeal(meal.id, selectedDate)} style={{ flex: 1 }} />
-                      <PrimaryButton title="Watch Tutorial" icon="logo-youtube" onPress={() => watchTutorial(meal.name)} style={{ flex: 1 }} />
-                    </View>
-                  </Card>
-                ))
-              )}
-            </>
-          )}
-        </View>
-      </Screen>
-      <LanguageModal visible={showLanguage} onClose={() => setShowLanguage(false)} />
-    </>
-  );
-}
-
-function CalendarModal({
-  visible,
-  selectedDate,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  selectedDate: string;
-  onSelect: (dateKey: string) => void;
-  onClose: () => void;
-}) {
-  const selected = fromDateKey(selectedDate);
-  const todayKey = toDateKey(new Date());
-  const [viewMonth, setViewMonth] = useState(new Date(selected.getFullYear(), selected.getMonth(), 1));
-
-  useEffect(() => {
-    if (visible) setViewMonth(new Date(selected.getFullYear(), selected.getMonth(), 1));
-  }, [visible, selectedDate]);
-
-  const cells = useMemo(() => {
-    const first = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
-    const start = new Date(first);
-    const mondayOffset = (first.getDay() + 6) % 7;
-    start.setDate(first.getDate() - mondayOffset);
-
-    return Array.from({ length: 42 }, (_, index) => {
-      const date = new Date(start);
-      date.setDate(start.getDate() + index);
-      const key = toDateKey(date);
       return {
-        key,
-        day: date.getDate(),
-        inMonth: date.getMonth() === viewMonth.getMonth(),
-        isSelected: key === selectedDate,
-        isToday: key === todayKey,
+        ...prev,
+        [selectedKey]: [...current, meal],
       };
     });
-  }, [viewMonth, selectedDate, todayKey]);
+  };
 
-  const changeMonth = (offset: number) => {
-    setViewMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+  const deleteMealFromPlan = (mealId: string) => {
+    setMealPlans((prev) => {
+      const current = prev[selectedKey] || [];
+
+      return {
+        ...prev,
+        [selectedKey]: current.filter((meal) => meal.idMeal !== mealId),
+      };
+    });
+  };
+
+  const replaceMeal = (oldMealId: string, newMeal: MealRecipe) => {
+    setMealPlans((prev) => {
+      const current = prev[selectedKey] || [];
+
+      return {
+        ...prev,
+        [selectedKey]: current.map((meal) =>
+          meal.idMeal === oldMealId ? newMeal : meal
+        ),
+      };
+    });
+  };
+
+  const openRecipeDetail = (meal: MealRecipe) => {
+    navigation.navigate('RecipeDetail', { meal });
+  };
+
+  const goPrevMonth = () => {
+    setCalendarMonth(
+      new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1)
+    );
+  };
+
+  const goNextMonth = () => {
+    setCalendarMonth(
+      new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1)
+    );
+  };
+
+  const selectCalendarDate = (date: Date) => {
+    setSelectedDate(date);
+    setCalendarMonth(date);
+    setShowCalendar(false);
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.calendarBackdrop} onPress={onClose}>
-        <Pressable style={styles.calendarPanel} onPress={(event) => event.stopPropagation()}>
-          <View style={styles.calendarTopRow}>
-            <Text style={styles.calendarMonthTitle}>
-              {viewMonth.getFullYear()}年{viewMonth.getMonth() + 1}月
-            </Text>
-            <View style={styles.calendarNavRow}>
-              <Pressable style={styles.calendarNavButton} onPress={() => changeMonth(-1)}>
-                <Ionicons name="chevron-up" size={20} color="#FFFFFF" />
+    <Screen padded={false}>
+      <Header
+        title="Meal Plan"
+        subtitle="Search recipes and build daily plans"
+        icon="restaurant"
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.dateHeaderRow}>
+          <Text style={styles.dateHeaderTitle}>
+            {selectedDate.toLocaleDateString('en-MY', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </Text>
+
+          <Pressable
+            style={styles.calendarButton}
+            onPress={() => setShowCalendar(true)}
+          >
+            <Ionicons name="calendar-outline" size={18} color={colors.primaryDark} />
+            <Text style={styles.calendarButtonText}>Calendar</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateRow}
+        >
+          {dateTabs.map((date) => {
+            const key = formatDateKey(date);
+            const isSelected = key === selectedKey;
+            const isToday = key === todayKey;
+
+            return (
+              <Pressable
+                key={key}
+                style={[styles.dateCard, isSelected && styles.dateCardActive]}
+                onPress={() => setSelectedDate(date)}
+              >
+                <Text style={[styles.dateDay, isSelected && styles.dateTextActive]}>
+                  {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                </Text>
+
+                <Text
+                  style={[styles.dateNumber, isSelected && styles.dateTextActive]}
+                >
+                  {date.getDate()}
+                </Text>
+
+                <Text style={[styles.dateMonth, isSelected && styles.dateTextActive]}>
+                  {date.toLocaleDateString('en-US', { month: 'short' })}
+                </Text>
+
+                {isToday && (
+                  <View style={styles.todayBadge}>
+                    <Text style={styles.todayText}>Today</Text>
+                  </View>
+                )}
               </Pressable>
-              <Pressable style={styles.calendarNavButton} onPress={() => changeMonth(1)}>
-                <Ionicons name="chevron-down" size={20} color="#FFFFFF" />
-              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.nutritionCard}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>Today's Nutrition</Text>
+            <Text style={styles.cardSubtitle}>{dateMeals.length} meals</Text>
+          </View>
+
+          <View style={styles.nutritionGrid}>
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>{round(totals.calories)}</Text>
+              <Text style={styles.nutritionLabel}>kcal</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>{round(totals.protein)}g</Text>
+              <Text style={styles.nutritionLabel}>Protein</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>{round(totals.carbs)}g</Text>
+              <Text style={styles.nutritionLabel}>Carbs</Text>
+            </View>
+
+            <View style={styles.nutritionItem}>
+              <Text style={styles.nutritionValue}>{round(totals.fat)}g</Text>
+              <Text style={styles.nutritionLabel}>Fat</Text>
             </View>
           </View>
+        </View>
 
-          <View style={styles.weekRow}>
-            {['一', '二', '三', '四', '五', '六', '日'].map((item) => (
-              <Text key={item} style={styles.weekText}>{item}</Text>
-            ))}
-          </View>
+        <View style={styles.searchCard}>
+          <Text style={styles.sectionTitle}>Search Recipes</Text>
 
-          <View style={styles.calendarGrid}>
-            {cells.map((item) => (
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={20} color={colors.primaryDark} />
+
+            <TextInput
+              value={keyword}
+              onChangeText={setKeyword}
+              placeholder="Search recipe e.g. banana, chicken"
+              placeholderTextColor="#9CA3AF"
+              style={styles.searchInput}
+              returnKeyType="search"
+              onSubmitEditing={handleSearch}
+            />
+
+            {keyword.length > 0 && (
               <Pressable
-                key={item.key}
-                style={[styles.calendarCell, item.isSelected && styles.calendarCellSelected]}
-                onPress={() => onSelect(item.key)}
+                style={styles.clearButton}
+                onPress={() => {
+                  setKeyword('');
+                  setResults([]);
+                  setSearchError('');
+                }}
               >
-                <Text style={[styles.calendarDayText, !item.inMonth && styles.calendarMutedText, item.isSelected && styles.calendarSelectedText]}>
-                  {item.day}
-                </Text>
-                <Text style={[styles.calendarSubText, !item.inMonth && styles.calendarMutedText, item.isSelected && styles.calendarSelectedText]}>
-                  {item.isToday ? '今天' : item.inMonth ? ' ' : ' '}
-                </Text>
+                <Ionicons name="close" size={18} color={colors.muted} />
               </Pressable>
+            )}
+
+            <Pressable style={styles.searchButton} onPress={handleSearch}>
+              <Text style={styles.searchButtonText}>Search</Text>
+            </Pressable>
+          </View>
+
+          {loading && (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={colors.primaryDark} />
+              <Text style={styles.loadingText}>Searching recipes...</Text>
+            </View>
+          )}
+
+          {!!searchError && !loading && (
+            <View style={styles.errorBox}>
+              <Ionicons name="warning-outline" size={18} color="#B91C1C" />
+              <Text style={styles.errorText}>{searchError}</Text>
+            </View>
+          )}
+        </View>
+
+        {dateMeals.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>Meal Plan for Selected Date</Text>
+
+            {dateMeals.map((meal) => (
+              <View key={meal.idMeal} style={styles.mealPlanCard}>
+                <Pressable
+                  style={styles.mealMain}
+                  onPress={() => openRecipeDetail(meal)}
+                >
+                  {meal.strMealThumb ? (
+                    <Image source={{ uri: meal.strMealThumb }} style={styles.mealImage} />
+                  ) : (
+                    <View style={styles.mealImageFallback}>
+                      <Text style={styles.fallbackEmoji}>🍽️</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.mealInfo}>
+                    <Text style={styles.mealTitle} numberOfLines={2}>
+                      {meal.strMeal}
+                    </Text>
+
+                    <Text style={styles.mealMeta}>
+                      {meal.strCategory || 'Recipe'} · {meal.strArea || 'Meal'}
+                    </Text>
+
+                    <Text style={styles.mealNutrition}>
+                      {round(meal.totalEnergyKcal)} kcal · P{' '}
+                      {round(meal.totalProteinG)}g · C{' '}
+                      {round(meal.totalCarbohydrateG)}g · F{' '}
+                      {round(meal.totalFatG)}g
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.muted}
+                  />
+                </Pressable>
+
+                <View style={styles.mealActions}>
+                  <Pressable
+                    style={styles.secondaryAction}
+                    onPress={() => {
+                      const candidate = results.find(
+                        (item) => item.idMeal !== meal.idMeal
+                      );
+                      if (candidate) replaceMeal(meal.idMeal, candidate);
+                    }}
+                  >
+                    <Ionicons
+                      name="swap-horizontal"
+                      size={16}
+                      color={colors.primaryDark}
+                    />
+                    <Text style={styles.secondaryActionText}>Replace</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.deleteAction}
+                    onPress={() => deleteMealFromPlan(meal.idMeal)}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    <Text style={styles.deleteActionText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
             ))}
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
+        )}
 
-function NutritionItem({ label, current, target, unit }: { label: string; current: number; target: number; unit: string }) {
-  return (
-    <View style={styles.nutritionItem}>
-      <Text style={styles.nutritionLabel}>{label}</Text>
-      <Text style={styles.nutritionValue}>{current}{unit}</Text>
-      <Text style={styles.nutritionTarget}>/ {target}{unit}</Text>
-    </View>
+        <View>
+          <Text style={styles.sectionTitle}>Search Results</Text>
+
+          {results.length === 0 && !loading ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyEmoji}>🔍</Text>
+              <Text style={styles.emptyTitle}>Search for recipes</Text>
+              <Text style={styles.emptyText}>
+                Results from your meal database will appear here.
+              </Text>
+            </View>
+          ) : (
+            results.map((meal) => (
+              <View key={meal.idMeal} style={styles.resultCard}>
+                <Pressable
+                  style={styles.mealMain}
+                  onPress={() => openRecipeDetail(meal)}
+                >
+                  {meal.strMealThumb ? (
+                    <Image
+                      source={{ uri: meal.strMealThumb }}
+                      style={styles.resultImage}
+                    />
+                  ) : (
+                    <View style={styles.resultImageFallback}>
+                      <Text style={styles.fallbackEmoji}>🍽️</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.mealInfo}>
+                    <Text style={styles.mealTitle} numberOfLines={2}>
+                      {meal.strMeal}
+                    </Text>
+
+                    <Text style={styles.mealMeta}>
+                      {meal.strCategory || 'Recipe'} · {meal.strArea || 'Meal'}
+                    </Text>
+
+                    <Text style={styles.mealNutrition}>
+                      {round(meal.totalEnergyKcal)} kcal · Protein{' '}
+                      {round(meal.totalProteinG)}g
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.muted}
+                  />
+                </Pressable>
+
+                <Pressable
+                  style={styles.addButton}
+                  onPress={() => addMealToPlan(meal)}
+                >
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                  <Text style={styles.addButtonText}>Add to Plan</Text>
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={showCalendar}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <Pressable
+          style={styles.calendarBackdrop}
+          onPress={() => setShowCalendar(false)}
+        >
+          <Pressable style={styles.calendarModal} onPress={() => {}}>
+            <View style={styles.calendarHeader}>
+              <Pressable style={styles.monthButton} onPress={goPrevMonth}>
+                <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+              </Pressable>
+
+              <Text style={styles.calendarTitle}>
+                {calendarMonth.toLocaleDateString('en-US', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </Text>
+
+              <Pressable style={styles.monthButton} onPress={goNextMonth}>
+                <Ionicons name="chevron-forward" size={22} color="#FFFFFF" />
+              </Pressable>
+            </View>
+
+            <View style={styles.weekRow}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <Text key={day} style={styles.weekText}>
+                  {day}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.calendarGrid}>
+              {calendarDays.map((date) => {
+                const key = formatDateKey(date);
+                const isCurrentMonth =
+                  date.getMonth() === calendarMonth.getMonth();
+                const isSelected = key === selectedKey;
+                const isToday = key === todayKey;
+
+                return (
+                  <Pressable
+                    key={key}
+                    style={[
+                      styles.calendarDate,
+                      isSelected && styles.calendarDateSelected,
+                    ]}
+                    onPress={() => selectCalendarDate(date)}
+                  >
+                    <Text
+                      style={[
+                        styles.calendarDateText,
+                        !isCurrentMonth && styles.calendarDateMuted,
+                        isSelected && styles.calendarDateTextSelected,
+                      ]}
+                    >
+                      {date.getDate()}
+                    </Text>
+
+                    {isToday && !isSelected && <View style={styles.todayDot} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 14, paddingBottom: 110 },
-  langButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  langText: { color: 'white', fontWeight: '800' },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.bg, borderRadius: 18, paddingHorizontal: 12, minHeight: 52 },
-  searchInput: { flex: 1, color: colors.text },
-  calendarRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  selectedDateText: { color: colors.text, fontWeight: '900', fontSize: 16 },
-  calendarButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primaryLight, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999 },
-  calendarButtonText: { color: colors.primaryDark, fontWeight: '800', fontSize: 12 },
-  calendarBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 22 },
-  calendarPanel: { backgroundColor: '#242424', borderRadius: 18, padding: 14 },
-  calendarTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  calendarMonthTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  calendarNavRow: { flexDirection: 'row', gap: 14 },
-  calendarNavButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  weekRow: { flexDirection: 'row', marginBottom: 6 },
-  weekText: { width: `${100 / 7}%`, textAlign: 'center', color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calendarCell: { width: `${100 / 7}%`, height: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
-  calendarCellSelected: { borderColor: '#18A9FF', backgroundColor: 'rgba(24,169,255,0.15)' },
-  calendarDayText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-  calendarSubText: { color: '#8EBFFF', fontSize: 10, marginTop: 1 },
-  calendarMutedText: { color: '#707070' },
-  calendarSelectedText: { color: '#FFFFFF' },
-  pickerCard: { padding: 4 },
-  datesScroll: { marginHorizontal: -20, paddingHorizontal: 20 },
-  dateChip: { width: 74, minHeight: 88, borderRadius: 22, padding: 12, backgroundColor: 'white', alignItems: 'center', marginRight: 10, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
-  dateChipActive: { backgroundColor: colors.primaryDark },
-  dateDay: { color: colors.muted, fontWeight: '700' },
-  dateNum: { color: colors.text, fontWeight: '900', fontSize: 20, marginTop: 4 },
-  todayText: { color: colors.primaryDark, fontSize: 10, fontWeight: '900', marginTop: 4 },
-  dateTextActive: { color: 'white' },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  cardTitle: { color: colors.text, fontSize: 20, fontWeight: '900' },
-  cardSubtitle: { color: colors.muted, fontWeight: '700' },
-  nutritionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  nutritionItem: { width: '48%', backgroundColor: colors.bg, borderRadius: 18, padding: 12 },
-  nutritionLabel: { color: colors.muted, fontSize: 12, fontWeight: '800' },
-  nutritionValue: { color: colors.text, fontSize: 18, fontWeight: '900', marginTop: 4 },
-  nutritionTarget: { color: colors.primaryDark, fontSize: 12, fontWeight: '800', marginTop: 2 },
-  inlineErrorBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderRadius: 14, padding: 10, marginBottom: 12 },
-  inlineErrorText: { flex: 1, color: '#991B1B', fontSize: 12, fontWeight: '700', lineHeight: 17 },
-  actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  subHeading: { color: colors.muted, flex: 1 },
-  generateButton: { minWidth: 120 },
-  mealCard: { gap: 12 },
-  mealHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  mealIcon: { fontSize: 38 },
-  mealType: { color: colors.primaryDark, fontWeight: '800', fontSize: 12 },
-  mealName: { color: colors.text, fontWeight: '900', fontSize: 16, marginTop: 3 },
-  macroRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  buttonsRow: { flexDirection: 'row', gap: 10 },
+  content: {
+    padding: 20,
+    paddingBottom: 120,
+    gap: 18,
+  },
+
+  dateHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  dateHeaderTitle: {
+    color: colors.text,
+    fontWeight: '900',
+    fontSize: 18,
+  },
+
+  calendarButton: {
+    height: 38,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  calendarButtonText: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+    fontSize: 13,
+  },
+
+  dateRow: {
+    gap: 10,
+  },
+
+  dateCard: {
+    width: 72,
+    height: 94,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+
+  dateCardActive: {
+    backgroundColor: colors.primaryDark,
+  },
+
+  dateDay: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '700',
+  },
+
+  dateNumber: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 3,
+  },
+
+  dateMonth: {
+    fontSize: 11,
+    color: colors.muted,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+
+  dateTextActive: {
+    color: '#FFFFFF',
+  },
+
+  todayBadge: {
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+
+  todayText: {
+    fontSize: 10,
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+
+  nutritionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+
+  cardTitle: {
+    fontSize: 20,
+    color: colors.text,
+    fontWeight: '900',
+  },
+
+  cardSubtitle: {
+    color: colors.muted,
+    fontWeight: '700',
+  },
+
+  nutritionGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  nutritionItem: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+
+  nutritionValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: colors.text,
+  },
+
+  nutritionLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    color: colors.muted,
+  },
+
+  searchCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.text,
+    marginBottom: 12,
+  },
+
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    minHeight: 54,
+    gap: 8,
+  },
+
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+  },
+
+  clearButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2F7',
+  },
+
+  searchButton: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  searchButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+
+  loadingRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  loadingText: {
+    color: colors.muted,
+    fontWeight: '700',
+  },
+
+  errorBox: {
+    marginTop: 14,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  errorText: {
+    color: '#B91C1C',
+    fontWeight: '700',
+    flex: 1,
+  },
+
+  mealPlanCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2,
+  },
+
+  resultCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2,
+  },
+
+  mealMain: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+
+  mealImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 18,
+    backgroundColor: '#E5E7EB',
+  },
+
+  mealImageFallback: {
+    width: 76,
+    height: 76,
+    borderRadius: 18,
+    backgroundColor: '#EAF7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  resultImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 20,
+    backgroundColor: '#E5E7EB',
+  },
+
+  resultImageFallback: {
+    width: 84,
+    height: 84,
+    borderRadius: 20,
+    backgroundColor: '#EAF7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  fallbackEmoji: {
+    fontSize: 28,
+  },
+
+  mealInfo: {
+    flex: 1,
+  },
+
+  mealTitle: {
+    color: colors.text,
+    fontWeight: '900',
+    fontSize: 15,
+  },
+
+  mealMeta: {
+    color: colors.muted,
+    marginTop: 4,
+    fontSize: 12,
+  },
+
+  mealNutrition: {
+    color: colors.primaryDark,
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  addButton: {
+    marginTop: 12,
+    backgroundColor: colors.primaryDark,
+    height: 42,
+    borderRadius: 18,
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  addButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+
+  mealActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+
+  secondaryAction: {
+    flex: 1,
+    height: 40,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+
+  secondaryActionText: {
+    color: colors.primaryDark,
+    fontWeight: '900',
+  },
+
+  deleteAction: {
+    flex: 1,
+    height: 40,
+    borderRadius: 16,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+
+  deleteActionText: {
+    color: '#EF4444',
+    fontWeight: '900',
+  },
+
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+  },
+
+  emptyEmoji: {
+    fontSize: 40,
+  },
+
+  emptyTitle: {
+    marginTop: 10,
+    color: colors.text,
+    fontWeight: '900',
+    fontSize: 17,
+  },
+
+  emptyText: {
+    marginTop: 6,
+    color: colors.muted,
+    textAlign: 'center',
+  },
+
+  calendarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+
+  calendarModal: {
+    width: '100%',
+    maxWidth: 390,
+    backgroundColor: '#1F2937',
+    borderRadius: 24,
+    padding: 18,
+  },
+
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+
+  monthButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+
+  calendarTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  weekRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+
+  weekText: {
+    flex: 1,
+    color: '#D1D5DB',
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+
+  calendarDate: {
+    width: `${100 / 7}%`,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  calendarDateSelected: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+  },
+
+  calendarDateText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  calendarDateMuted: {
+    color: '#6B7280',
+  },
+
+  calendarDateTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+
+  todayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#60A5FA',
+    marginTop: 2,
+  },
 });
