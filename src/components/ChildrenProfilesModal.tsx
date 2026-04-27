@@ -4,12 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useChildProfile } from '../context/ChildProfileContext';
 import { colors } from '../theme/colors';
 import { Card, IconButton, PrimaryButton, SecondaryButton } from './Common';
+import ChildAvatar from './ChildAvatar';
 import AddChildModal from './AddChildModal';
 import Toast from './Toast';
 
 type Child = {
   id: number;
   avatar: string;
+  avatarImageUri?: string;
   nickname: string;
   birthday?: string;
   age: number;
@@ -53,10 +55,11 @@ export default function ChildrenProfilesModal({ visible, onClose }: { visible: b
                 const active = activeChild?.id === child.id;
                 return (
                   <Pressable key={child.id} onPress={() => switchToChild(child.id)} style={[styles.childCard, active && styles.childCardActive]}>
-                    <Text style={styles.avatar}>{child.avatar}</Text>
+                    <ChildAvatar avatar={child.avatar} avatarImageUri={child.avatarImageUri} size={48} style={styles.avatar} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.childName}>{child.nickname}</Text>
                       <Text style={styles.childInfo}>{child.age} years · {child.height}cm · {child.weight}kg</Text>
+                      {child.birthday ? <Text style={styles.childInfo}>{child.birthday}</Text> : null}
                       {active && <Text style={styles.activeText}>Active profile</Text>}
                     </View>
                     <View style={styles.actions}>
@@ -84,7 +87,7 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
   childCard: { marginBottom: 12, borderRadius: 20, padding: 14, backgroundColor: colors.bg, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 2, borderColor: 'transparent' },
   childCardActive: { borderColor: colors.primaryDark, backgroundColor: '#F0FDF4' },
-  avatar: { fontSize: 34 },
+  avatar: { alignSelf: 'flex-start' },
   childName: { fontSize: 17, color: colors.text, fontWeight: '800' },
   childInfo: { color: colors.muted, marginTop: 3 },
   activeText: { color: colors.primaryDark, fontSize: 12, fontWeight: '800', marginTop: 4 },

@@ -4,6 +4,7 @@ interface ChildProfile {
   id: number;
   nickname: string;
   avatar: string;
+  avatarImageUri?: string;
   age: number;
   height: number;
   weight: number;

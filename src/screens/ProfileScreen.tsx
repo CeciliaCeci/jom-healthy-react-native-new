@@ -5,6 +5,7 @@ import { useChildProfile } from '../context/ChildProfileContext';
 import { useLanguage } from '../context/LanguageContext';
 import { colors } from '../theme/colors';
 import { Card, Header, IconButton, PrimaryButton, Screen, SectionTitle } from '../components/Common';
+import ChildAvatar from '../components/ChildAvatar';
 import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
 import LanguageModal from '../components/LanguageModal';
 
@@ -34,11 +35,12 @@ export default function ProfileScreen() {
         <View style={styles.body}>
           <Card>
             <View style={styles.profileRow}>
-              <Text style={styles.avatar}>{activeChild?.avatar || '👶'}</Text>
+              <ChildAvatar avatar={activeChild?.avatar || '👶'} avatarImageUri={activeChild?.avatarImageUri} size={56} style={styles.avatar} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{activeChild?.nickname || 'No Child Selected'}</Text>
                 <Text style={styles.meta}>{children.length === 0 ? 'No children registered' : children.length === 1 ? '1 child registered' : `${children.length} children registered`}</Text>
                 {activeChild && <Text style={styles.meta}>{activeChild.age} years · {activeChild.height}cm · {activeChild.weight}kg</Text>}
+                {activeChild?.birthday && <Text style={styles.meta}>Birthday · {activeChild.birthday}</Text>}
               </View>
               <IconButton icon="people" onPress={() => setShowChildren(true)} />
             </View>
@@ -89,7 +91,7 @@ const styles = StyleSheet.create({
   langButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   langText: { color: 'white', fontWeight: '800' },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { fontSize: 44 },
+  avatar: { alignSelf: 'flex-start' },
   name: { color: colors.text, fontSize: 20, fontWeight: '900' },
   meta: { color: colors.muted, marginTop: 3, fontSize: 12 },
   sectionHeading: { color: colors.text, fontSize: 18, fontWeight: '800', marginBottom: 12 },

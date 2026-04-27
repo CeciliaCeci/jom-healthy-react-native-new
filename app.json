@@ -6,9 +6,18 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./src/assets/images/icon.png",
-    "assetBundlePatterns": ["**/*"],
-    "ios": { "supportsTablet": true },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
     "android": {},
-    "web": { "bundler": "metro" }
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
   }
 }

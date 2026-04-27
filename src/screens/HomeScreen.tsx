@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useChildProfile } from '../context/ChildProfileContext';
 import { colors } from '../theme/colors';
 import { Card, Chip, EmptyState, Header, IconButton, PrimaryButton, Screen, SectionTitle } from '../components/Common';
+import ChildAvatar from '../components/ChildAvatar';
 import ProgressRing from '../components/ProgressRing';
 import DigitalTwin from '../components/DigitalTwin';
 import LanguageModal from '../components/LanguageModal';
@@ -35,6 +36,7 @@ export default function HomeScreen() {
   );
 
   const getText = (en: string, zh: string, ms: string) => (language === 'zh' ? zh : language === 'ms' ? ms : en);
+  const getChildChipLabel = (child: any) => (child.avatarImageUri ? child.nickname : `${child.avatar} ${child.nickname}`);
 
   const handleFoodSearch = (value?: string) => {
     const foodName = (value ?? searchText).trim();
@@ -139,12 +141,13 @@ export default function HomeScreen() {
             <>
               <Card>
                 <View style={styles.childTopRow}>
-                  <Text style={styles.avatar}>{activeChild.avatar}</Text>
+                  <ChildAvatar avatar={activeChild.avatar} avatarImageUri={activeChild.avatarImageUri} size={56} style={styles.avatar} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.childName}>{activeChild.nickname}</Text>
                     <Text style={styles.childMeta}>
                       {activeChild.age} {t('yearsOld')} · BMI {activeChild.bmi ?? '-'} · {activeChild.status || t('healthy')}
                     </Text>
+                    {activeChild.birthday && <Text style={styles.childMeta}>Birthday · {activeChild.birthday}</Text>}
                     <Text style={styles.childMeta}>{t('lastCheck')}: {lastCheckDate}</Text>
                   </View>
                   <IconButton icon="people" onPress={() => setShowChildren(true)} />
@@ -152,7 +155,7 @@ export default function HomeScreen() {
                 {children.length > 1 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
                     {children.map((child: any) => (
-                      <Chip key={child.id} label={`${child.avatar} ${child.nickname}`} selected={child.id === activeChild.id} onPress={() => switchToChild(child.id)} />
+                      <Chip key={child.id} label={getChildChipLabel(child)} selected={child.id === activeChild.id} onPress={() => switchToChild(child.id)} />
                     ))}
                   </ScrollView>
                 )}
@@ -254,7 +257,7 @@ const styles = StyleSheet.create({
   suggestionsRow: { marginTop: 10 },
   emptyHistory: { color: colors.muted, fontSize: 12, marginTop: 8 },
   childTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { fontSize: 42 },
+  avatar: { alignSelf: 'flex-start' },
   childName: { fontSize: 20, fontWeight: '800', color: colors.text },
   childMeta: { color: colors.muted, marginTop: 3 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
