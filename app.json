@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "JomHealthy",
+    "slug": "jomhealthy-react-native",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./src/assets/images/icon.png",
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true },
+    "android": {},
+    "web": { "bundler": "metro" }
+  }
+}
