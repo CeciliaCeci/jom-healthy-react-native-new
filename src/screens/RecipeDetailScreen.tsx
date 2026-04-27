@@ -11,14 +11,15 @@ const mealIcons = { breakfast: '🍳', lunch: '🍱', dinner: '🍲', snack: '�
 export default function RecipeDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { toggleMeal } = useChildProfile();
+  const { addSavedRecipe, removeSavedRecipe, isRecipeSaved } = useChildProfile();
   const meal = route.params?.meal;
-  const date = route.params?.date;
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+
   if (!meal) return <Screen><Text style={{ color: colors.muted }}>Recipe not found</Text></Screen>;
+
   const image = meal.imageUrl || 'https://images.unsplash.com/photo-1600289031464-74d374b64991?w=800&h=400&fit=crop';
+  const saved = isRecipeSaved(meal.id);
   const openVideo = () => Linking.openURL(`https://www.youtube.com/results?search_query=${encodeURIComponent(`how to cook ${meal.name}`)}`);
-  const markDone = () => { toggleMeal(meal.id, date); navigation.goBack(); };
 
   return (
     <Screen padded={false}>
@@ -27,11 +28,17 @@ export default function RecipeDetailScreen() {
       <View style={styles.body}>
         <Card>
           <View style={styles.titleRow}>
-            <Text style={styles.mealIcon}>{mealIcons[meal.type as keyof typeof mealIcons]}</Text>
+            <Text style={styles.mealIcon}>{mealIcons[meal.type as keyof typeof mealIcons] || '🍽️'}</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{meal.name}</Text>
               <Text style={styles.sub}>{meal.carbs}g carbs · {meal.protein}g protein · {meal.fat}g fat</Text>
             </View>
+            <Pressable
+              style={[styles.saveButton, saved && styles.saveButtonActive]}
+              onPress={() => (saved ? removeSavedRecipe(meal.id) : addSavedRecipe(meal))}
+            >
+              <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? 'white' : colors.primaryDark} />
+            </Pressable>
           </View>
         </Card>
 
@@ -52,7 +59,7 @@ export default function RecipeDetailScreen() {
         <SectionTitle title="Cooking Steps" />
         <Card>
           {(meal.steps || []).map((step: string, index: number) => (
-            <View key={step} style={styles.stepRow}>
+            <View key={`${step}-${index}`} style={styles.stepRow}>
               <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>
               <Text style={styles.stepText}>{step}</Text>
             </View>
@@ -60,16 +67,17 @@ export default function RecipeDetailScreen() {
         </Card>
 
         <Card>
-          <Text style={styles.videoTitle}>Watch Cooking Video</Text>
+          <Text style={styles.videoTitle}>Watch Tutorial</Text>
           <View style={styles.buttonsRow}>
-            <SecondaryButton title="YouTube Search" icon="logo-youtube" onPress={openVideo} style={{ flex: 1 }} />
-            <PrimaryButton title="Completed" icon="checkmark" onPress={markDone} style={{ flex: 1 }} />
+            <SecondaryButton title={saved ? 'Saved' : 'Save Recipe'} icon={saved ? 'bookmark' : 'bookmark-outline'} onPress={() => (saved ? removeSavedRecipe(meal.id) : addSavedRecipe(meal))} style={{ flex: 1 }} />
+            <PrimaryButton title="Watch Tutorial" icon="logo-youtube" onPress={openVideo} style={{ flex: 1 }} />
           </View>
         </Card>
       </View>
     </Screen>
   );
 }
+
 const styles = StyleSheet.create({
   hero: { width: '100%', height: 220, backgroundColor: colors.bg },
   body: { padding: 20, gap: 12, paddingBottom: 34 },
@@ -77,6 +85,8 @@ const styles = StyleSheet.create({
   mealIcon: { fontSize: 42 },
   title: { color: colors.text, fontWeight: '900', fontSize: 20 },
   sub: { color: colors.muted, marginTop: 6 },
+  saveButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  saveButtonActive: { backgroundColor: colors.primaryDark },
   ingredientRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   check: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
   checkDone: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
