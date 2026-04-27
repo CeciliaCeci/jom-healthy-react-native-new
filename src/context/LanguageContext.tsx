@@ -22,7 +22,7 @@ const translations = {
     // Home Page
     searchPlaceholder: 'Search food (e.g. Nasi Lemak)',
     updateInfo: 'Update Info',
-    checkHealth: "Check Child's Health",
+    checkHealth: "Check Health",
     quickBMI: 'Quick BMI & nutrition check',
     getStarted: 'Get started',
     growthOverview: 'Growth Overview',
