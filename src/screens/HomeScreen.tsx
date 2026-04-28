@@ -530,7 +530,7 @@ export default function HomeScreen() {
             </Text>
           </Pressable>
 
-          {/* Health Insights */} // JJ: Recovered
+          {/* Health Insights */} 
           <SectionTitle title={t('Health Insights')} />
 
           {topicsLoading ? (
