@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Header, Screen } from '../components/Common';
 import { colors } from '../theme/colors';
-import { getFoodNutritionNeeds, searchMeals } from '../services/api';
+import { searchMeals } from '../services/api';
 import { useChildProfile } from '../context/ChildProfileContext';
 
 type Ingredient = {
@@ -63,12 +63,6 @@ type MealSlotKey = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 
 type MealPlanForDay = Partial<Record<MealSlotKey, MealRecipe>>;
 
-type NutritionTargets = {
-  carbs: number;
-  protein: number;
-  fat: number;
-};
-
 type ShoppingCategory = 'vegetables' | 'protein' | 'carbs' | 'others';
 
 type ShoppingItem = {
@@ -86,7 +80,7 @@ const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_SHOPPING_LIST_BY_OWNER_V1';
 
 const SLOT_ORDER: MealSlotKey[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
-const DEFAULT_TARGETS: NutritionTargets = {
+const DEFAULT_TARGETS = {
   carbs: 155,
   protein: 32,
   fat: 28,
@@ -99,18 +93,6 @@ function safeNumber(value: any) {
 
 function round(value?: number) {
   return Math.round(safeNumber(value));
-}
-
-function pickNumber(...values: any[]) {
-  for (const value of values) {
-    const num = Number(value);
-
-    if (value !== null && value !== undefined && Number.isFinite(num)) {
-      return num;
-    }
-  }
-
-  return 0;
 }
 
 function formatDateKey(date: Date) {
@@ -146,63 +128,12 @@ function getMonthDays(monthDate: Date) {
   );
 }
 
-function getAgeMonths(child: any) {
-  if (child?.birthday) {
-    const normalized = String(child.birthday).replace(/-/g, '/');
-    const [year, month, day] = normalized.split('/').map(Number);
-
-    if (year && month && day) {
-      const birthDate = new Date(year, month - 1, day);
-      const today = new Date();
-
-      let months =
-        (today.getFullYear() - birthDate.getFullYear()) * 12 +
-        today.getMonth() -
-        birthDate.getMonth();
-
-      if (today.getDate() < birthDate.getDate()) {
-        months -= 1;
-      }
-
-      return Math.max(months, 0);
-    }
-  }
-
-  return Math.max(Number(child?.age || 7) * 12, 0);
-}
-
-function parseNutritionTargets(payload: any): NutritionTargets {
-  const data = payload?.data ?? payload ?? {};
-
-  return {
-    carbs:
-      pickNumber(
-        data.carbs,
-        data.carbsG,
-        data.carbohydrateG,
-        data.carbohydrate,
-        data.carbohydrateTargetG,
-        data.targetCarbsG,
-        data.targetCarbohydrateG
-      ) || DEFAULT_TARGETS.carbs,
-
-    protein:
-      pickNumber(
-        data.protein,
-        data.proteinG,
-        data.proteinTargetG,
-        data.targetProteinG
-      ) || DEFAULT_TARGETS.protein,
-
-    fat:
-      pickNumber(data.fat, data.fatG, data.fatTargetG, data.targetFatG) ||
-      DEFAULT_TARGETS.fat,
-  };
-}
-
 function normalizeIngredientName(item: any) {
   return String(
-    item.foodNameEn || item.ingredientName || item.normalizedName || 'Ingredient'
+    item.foodNameEn ||
+      item.ingredientName ||
+      item.normalizedName ||
+      'Ingredient'
   ).trim();
 }
 
@@ -362,7 +293,8 @@ function NutritionRing({
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progress = target > 0 ? Math.min(value / target, 1) : 0;
+  const safeTarget = target > 0 ? target : 1;
+  const progress = Math.min(value / safeTarget, 1);
   const dashOffset = circumference * (1 - progress);
 
   return (
@@ -398,14 +330,15 @@ function NutritionRing({
       </View>
 
       <Text style={styles.ringLabel}>{label}</Text>
-      <Text style={styles.ringTarget}>/{target}g</Text>
+      <Text style={styles.ringTarget}>/{round(target)}g</Text>
     </View>
   );
 }
 
 export default function MealScreen() {
   const navigation = useNavigation<any>();
-  const { activeChild, getOwnerKey } = useChildProfile();
+
+  const { activeChild, getOwnerKey, nutritionNeeds } = useChildProfile();
 
   const ownerKey = getOwnerKey();
 
@@ -426,15 +359,17 @@ export default function MealScreen() {
   >({});
   const [mealPlansLoaded, setMealPlansLoaded] = useState(false);
 
-  const [targets, setTargets] = useState<NutritionTargets>(DEFAULT_TARGETS);
-  const [targetsLoading, setTargetsLoading] = useState(false);
-  const [targetsError, setTargetsError] = useState('');
-
   const selectedKey = formatDateKey(selectedDate);
   const todayKey = formatDateKey(today);
 
   const mealPlans = allMealPlans[ownerKey] || {};
   const selectedDayPlan: MealPlanForDay = mealPlans[selectedKey] || {};
+
+  const currentTargets = {
+    carbs: nutritionNeeds?.carbs || DEFAULT_TARGETS.carbs,
+    protein: nutritionNeeds?.protein || DEFAULT_TARGETS.protein,
+    fat: nutritionNeeds?.fat || DEFAULT_TARGETS.fat,
+  };
 
   const dateTabs = useMemo(
     () => getCenteredSevenDays(selectedDate),
@@ -504,49 +439,6 @@ export default function MealScreen() {
 
     saveMealPlans();
   }, [allMealPlans, mealPlansLoaded]);
-
-  useEffect(() => {
-    const loadNutritionNeeds = async () => {
-      if (!activeChild) {
-        setTargets(DEFAULT_TARGETS);
-        setTargetsError('');
-        return;
-      }
-
-      const heightCm = Number(activeChild.height);
-      const weightKg = Number(activeChild.weight);
-      const ageMonths = getAgeMonths(activeChild);
-      const gender = activeChild.gender === 'girl' ? 2 : 1;
-
-      if (!heightCm || !weightKg || !ageMonths) {
-        setTargets(DEFAULT_TARGETS);
-        setTargetsError('Missing child profile data.');
-        return;
-      }
-
-      setTargetsLoading(true);
-      setTargetsError('');
-
-      const result = await getFoodNutritionNeeds({
-        heightCm,
-        weightKg,
-        ageMonths,
-        gender,
-      });
-
-      if (!result.ok) {
-        setTargets(DEFAULT_TARGETS);
-        setTargetsError(result.message);
-        setTargetsLoading(false);
-        return;
-      }
-
-      setTargets(parseNutritionTargets(result.data));
-      setTargetsLoading(false);
-    };
-
-    loadNutritionNeeds();
-  }, [activeChild]);
 
   useEffect(() => {
     const query = keyword.trim();
@@ -692,6 +584,13 @@ export default function MealScreen() {
   const selectCalendarDate = (date: Date) => {
     setSelectedDate(date);
     setCalendarMonth(date);
+    setShowCalendar(false);
+  };
+
+  const goToday = () => {
+    const nextToday = new Date();
+    setSelectedDate(nextToday);
+    setCalendarMonth(nextToday);
     setShowCalendar(false);
   };
 
@@ -934,13 +833,18 @@ export default function MealScreen() {
 
         <View style={styles.dateContainer}>
           <View style={styles.dateTopRow}>
-            <Text style={styles.dateTitle}>
-              {selectedDate.toLocaleDateString('en-MY', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              })}
-            </Text>
+            <View>
+              <Text style={styles.dateTitle}>
+                {selectedDate.toLocaleDateString('en-MY', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </Text>
+              <Text style={styles.dateSubtitle}>
+                Plan your meals for this day
+              </Text>
+            </View>
 
             <Pressable
               style={styles.calendarButton}
@@ -991,15 +895,11 @@ export default function MealScreen() {
           <View style={styles.nutritionHeaderRow}>
             <View>
               <Text style={styles.nutritionTitle}>Today's Nutrition</Text>
-              {targetsLoading ? (
-                <Text style={styles.nutritionSubtitle}>Loading nutrition needs...</Text>
-              ) : targetsError ? (
-                <Text style={styles.nutritionError}>Using default targets</Text>
-              ) : activeChild ? (
-                <Text style={styles.nutritionSubtitle}>Based on child profile</Text>
-              ) : (
-                <Text style={styles.nutritionSubtitle}>Guest default targets</Text>
-              )}
+              <Text style={styles.nutritionSubtitle}>
+                {activeChild
+                  ? 'Targets loaded from child profile'
+                  : 'Guest default targets'}
+              </Text>
             </View>
 
             <Text style={styles.nutritionProgressText}>Progress</Text>
@@ -1009,19 +909,19 @@ export default function MealScreen() {
             <NutritionRing
               label="Carbs"
               value={totals.carbs}
-              target={targets.carbs}
+              target={currentTargets.carbs}
               color="#F39B5F"
             />
             <NutritionRing
               label="Protein"
               value={totals.protein}
-              target={targets.protein}
+              target={currentTargets.protein}
               color="#72C3E6"
             />
             <NutritionRing
               label="Fat"
               value={totals.fat}
-              target={targets.fat}
+              target={currentTargets.fat}
               color="#56B277"
             />
           </View>
@@ -1071,9 +971,28 @@ export default function MealScreen() {
           onPress={() => setShowCalendar(false)}
         >
           <Pressable style={styles.calendarModal} onPress={() => {}}>
-            <View style={styles.calendarHeader}>
+            <View style={styles.calendarHero}>
+              <View>
+                <Text style={styles.calendarHeroLabel}>Select date</Text>
+                <Text style={styles.calendarHeroTitle}>
+                  {calendarMonth.toLocaleDateString('en-US', {
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </Text>
+              </View>
+
               <Pressable
-                style={styles.monthButton}
+                style={styles.calendarCloseButton}
+                onPress={() => setShowCalendar(false)}
+              >
+                <Ionicons name="close" size={20} color="#FFFFFF" />
+              </Pressable>
+            </View>
+
+            <View style={styles.calendarMonthRow}>
+              <Pressable
+                style={styles.calendarNavButton}
                 onPress={() =>
                   setCalendarMonth(
                     new Date(
@@ -1084,18 +1003,16 @@ export default function MealScreen() {
                   )
                 }
               >
-                <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+                <Ionicons name="chevron-back" size={22} color={colors.primaryDark} />
               </Pressable>
 
-              <Text style={styles.calendarTitle}>
-                {calendarMonth.toLocaleDateString('en-US', {
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </Text>
+              <Pressable style={styles.calendarTodayButton} onPress={goToday}>
+                <Ionicons name="sunny-outline" size={16} color={colors.primaryDark} />
+                <Text style={styles.calendarTodayText}>Today</Text>
+              </Pressable>
 
               <Pressable
-                style={styles.monthButton}
+                style={styles.calendarNavButton}
                 onPress={() =>
                   setCalendarMonth(
                     new Date(
@@ -1106,7 +1023,7 @@ export default function MealScreen() {
                   )
                 }
               >
-                <Ionicons name="chevron-forward" size={22} color="#FFFFFF" />
+                <Ionicons name="chevron-forward" size={22} color={colors.primaryDark} />
               </Pressable>
             </View>
 
@@ -1129,26 +1046,42 @@ export default function MealScreen() {
                 return (
                   <Pressable
                     key={key}
-                    style={[
-                      styles.calendarDate,
-                      isSelected && styles.calendarDateSelected,
-                    ]}
+                    style={styles.calendarCell}
                     onPress={() => selectCalendarDate(date)}
                   >
-                    <Text
+                    <View
                       style={[
-                        styles.calendarDateText,
-                        !isCurrentMonth && styles.calendarDateMuted,
-                        isSelected && styles.calendarDateTextSelected,
+                        styles.calendarDateCircle,
+                        isToday && styles.calendarDateToday,
+                        isSelected && styles.calendarDateSelected,
                       ]}
                     >
-                      {date.getDate()}
-                    </Text>
-
-                    {isToday && !isSelected && <View style={styles.todayDot} />}
+                      <Text
+                        style={[
+                          styles.calendarDateText,
+                          !isCurrentMonth && styles.calendarDateMuted,
+                          isToday && styles.calendarDateTodayText,
+                          isSelected && styles.calendarDateTextSelected,
+                        ]}
+                      >
+                        {date.getDate()}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
+            </View>
+
+            <View style={styles.calendarFooter}>
+              <View style={styles.calendarLegendItem}>
+                <View style={styles.legendTodayDot} />
+                <Text style={styles.calendarLegendText}>Today</Text>
+              </View>
+
+              <View style={styles.calendarLegendItem}>
+                <View style={styles.legendSelectedDot} />
+                <Text style={styles.calendarLegendText}>Selected</Text>
+              </View>
             </View>
           </Pressable>
         </Pressable>
@@ -1352,11 +1285,18 @@ const styles = StyleSheet.create({
     color: '#1F2937',
   },
 
+  dateSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+
   calendarButton: {
-    height: 34,
-    borderRadius: 17,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#EAF7F0',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -1445,13 +1385,6 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 12,
     fontWeight: '600',
-  },
-
-  nutritionError: {
-    marginTop: 3,
-    color: '#D97706',
-    fontSize: 12,
-    fontWeight: '700',
   },
 
   nutritionProgressText: {
@@ -1737,7 +1670,7 @@ const styles = StyleSheet.create({
 
   calendarBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(15,23,42,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -1745,71 +1678,145 @@ const styles = StyleSheet.create({
 
   calendarModal: {
     width: '100%',
-    maxWidth: 390,
-    backgroundColor: '#1F2937',
-    borderRadius: 24,
-    padding: 18,
+    maxWidth: 392,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 8,
   },
 
-  calendarHeader: {
+  calendarHero: {
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
   },
 
-  monthButton: {
+  calendarHeroLabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+
+  calendarHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+
+  calendarCloseButton: {
     width: 38,
     height: 38,
     borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
   },
 
-  calendarTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
+  calendarMonthRow: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  calendarNavButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#EAF7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  calendarTodayButton: {
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  calendarTodayText: {
+    color: colors.primaryDark,
+    fontSize: 13,
     fontWeight: '900',
   },
 
   weekRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
 
   weekText: {
     flex: 1,
-    color: '#D1D5DB',
+    color: '#94A3B8',
     textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
   },
 
   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    paddingHorizontal: 14,
+    paddingBottom: 10,
   },
 
-  calendarDate: {
+  calendarCell: {
     width: `${100 / 7}%`,
-    height: 42,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
+  calendarDateCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  calendarDateToday: {
+    borderWidth: 1.8,
+    borderColor: colors.primaryDark,
+    backgroundColor: '#FFFFFF',
+  },
+
   calendarDateSelected: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
+    backgroundColor: colors.primaryDark,
+    borderWidth: 0,
   },
 
   calendarDateText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: '#334155',
+    fontSize: 14,
+    fontWeight: '800',
   },
 
   calendarDateMuted: {
-    color: '#6B7280',
+    color: '#CBD5E1',
+  },
+
+  calendarDateTodayText: {
+    color: colors.primaryDark,
+    fontWeight: '900',
   },
 
   calendarDateTextSelected: {
@@ -1817,11 +1824,41 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
-  todayDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#60A5FA',
-    marginTop: 2,
+  calendarFooter: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
+  },
+
+  calendarLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+
+  legendTodayDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.primaryDark,
+    backgroundColor: '#FFFFFF',
+  },
+
+  legendSelectedDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primaryDark,
+  },
+
+  calendarLegendText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

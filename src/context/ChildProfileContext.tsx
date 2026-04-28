@@ -7,7 +7,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { NutritionNeeds } from '../services/api';
+import { getFoodNutritionNeeds, NutritionNeeds } from '../services/api';
 
 export interface ChildProfile {
   id: number;
@@ -82,12 +82,6 @@ interface ChildProfileContextType {
   updateChild: (child: ChildProfile) => void;
   removeChild: (childId: number) => void;
   switchToChild: (childId: number) => void;
-
-  /**
-   * 用于 Meal / Shopping / SavedRecipes 按用户分开存储。
-   * 没有小孩档案时返回 guest。
-   * 有小孩档案时返回 child-id。
-   */
   getOwnerKey: () => string;
 
   meals: Meal[];
@@ -99,12 +93,18 @@ interface ChildProfileContextType {
   replaceMeal: (mealId: string, date?: string) => void;
   deleteMeal: (mealId: string, date?: string) => void;
   toggleMeal: (mealId: string, date?: string) => void;
+
   nutritionProgress: NutritionProgress;
+  nutritionNeeds: NutritionNeeds;
+  refreshNutritionNeedsForChild: (child: ChildProfile) => Promise<void>;
   setNutritionNeeds: (needs: Partial<NutritionNeeds>) => void;
+
   getTip: () => string;
+
   shoppingList: ShoppingItem[];
   toggleShoppingItem: (itemId: string) => void;
   getShoppingProgress: () => { checked: number; total: number };
+
   savedRecipes: SavedRecipe[];
   addSavedRecipe: (meal: Meal) => void;
   removeSavedRecipe: (id: string) => void;
@@ -123,6 +123,13 @@ const SAVED_RECIPES_STORAGE_KEY = 'JOMHEALTHY_SAVED_RECIPES_BY_OWNER_V1';
 const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_CONTEXT_SHOPPING_BY_OWNER_V1';
 
 const GUEST_OWNER_KEY = 'guest';
+
+const DEFAULT_NUTRITION_NEEDS: NutritionNeeds = {
+  calories: 0,
+  carbs: 155,
+  protein: 32,
+  fat: 28,
+};
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
 
@@ -144,6 +151,104 @@ const getOwnerKeyFromChild = (child: ChildProfile | null) => {
   return child ? `child-${child.id}` : GUEST_OWNER_KEY;
 };
 
+function pickNumber(...values: any[]) {
+  for (const value of values) {
+    const num = Number(value);
+    if (value !== null && value !== undefined && Number.isFinite(num)) {
+      return num;
+    }
+  }
+  return 0;
+}
+
+function getAgeMonths(child: ChildProfile) {
+  if (child.birthday) {
+    const normalized = String(child.birthday).replace(/-/g, '/');
+    const [year, month, day] = normalized.split('/').map(Number);
+
+    if (year && month && day) {
+      const birthDate = new Date(year, month - 1, day);
+      const today = new Date();
+
+      let months =
+        (today.getFullYear() - birthDate.getFullYear()) * 12 +
+        today.getMonth() -
+        birthDate.getMonth();
+
+      if (today.getDate() < birthDate.getDate()) {
+        months -= 1;
+      }
+
+      return Math.max(months, 0);
+    }
+  }
+
+  return Math.max(Number(child.age || 7) * 12, 0);
+}
+
+function parseNutritionNeeds(payload: any): NutritionNeeds {
+  const raw = payload?.data ?? payload ?? {};
+  const data = Array.isArray(raw) ? raw[0] || {} : raw;
+
+  return {
+    calories:
+      pickNumber(
+        data.calories,
+        data.calorie,
+        data.energy,
+        data.energyKcal,
+        data.totalEnergyKcal,
+        data.targetCalories,
+        data.targetCaloriesKcal,
+        data.dailyCalories,
+        data.dailyEnergyKcal
+      ) || DEFAULT_NUTRITION_NEEDS.calories,
+
+    carbs:
+      pickNumber(
+        data.carbs,
+        data.carb,
+        data.carbsG,
+        data.carbohydrate,
+        data.carbohydrates,
+        data.carbohydrateG,
+        data.carbohydratesG,
+        data.carbohydrateTargetG,
+        data.targetCarbsG,
+        data.targetCarbohydrateG,
+        data.dailyCarbsG,
+        data.dailyCarbohydrateG
+      ) || DEFAULT_NUTRITION_NEEDS.carbs,
+
+    protein:
+      pickNumber(
+        data.protein,
+        data.proteins,
+        data.proteinG,
+        data.proteinsG,
+        data.proteinTargetG,
+        data.targetProteinG,
+        data.dailyProteinG
+      ) || DEFAULT_NUTRITION_NEEDS.protein,
+
+    fat:
+      pickNumber(
+        data.fat,
+        data.fats,
+        data.fatG,
+        data.fatsG,
+        data.fatTargetG,
+        data.targetFatG,
+        data.dailyFatG
+      ) || DEFAULT_NUTRITION_NEEDS.fat,
+  };
+}
+
+function hasValidNutritionNeeds(needs?: NutritionNeeds) {
+  if (!needs) return false;
+  return Number(needs.carbs) > 0 && Number(needs.protein) > 0 && Number(needs.fat) > 0;
+}
+
 const mealPools: Record<Meal['type'], Omit<Meal, 'id' | 'type'>[]> = {
   breakfast: [
     {
@@ -158,11 +263,7 @@ const mealPools: Record<Meal['type'], Omit<Meal, 'id' | 'type'>[]> = {
         { name: 'Banana', quantity: '1 piece', category: 'others' },
         { name: 'Milk', quantity: '1 cup', category: 'others' },
       ],
-      steps: [
-        'Cook oats with milk.',
-        'Slice banana.',
-        'Serve warm with banana on top.',
-      ],
+      steps: ['Cook oats with milk.', 'Slice banana.', 'Serve warm with banana on top.'],
     },
     {
       name: 'Scrambled Eggs with Toast',
@@ -176,11 +277,7 @@ const mealPools: Record<Meal['type'], Omit<Meal, 'id' | 'type'>[]> = {
         { name: 'Whole wheat bread', quantity: '2 slices', category: 'carbs' },
         { name: 'Tomato', quantity: '1 small', category: 'vegetables' },
       ],
-      steps: [
-        'Whisk eggs.',
-        'Scramble on low heat.',
-        'Toast bread and serve with tomato.',
-      ],
+      steps: ['Whisk eggs.', 'Scramble on low heat.', 'Toast bread and serve with tomato.'],
     },
   ],
   lunch: [
@@ -196,11 +293,7 @@ const mealPools: Record<Meal['type'], Omit<Meal, 'id' | 'type'>[]> = {
         { name: 'Rice', quantity: '1 cup', category: 'carbs' },
         { name: 'Broccoli', quantity: '1 cup', category: 'vegetables' },
       ],
-      steps: [
-        'Grill chicken until cooked.',
-        'Cook rice.',
-        'Steam vegetables and serve together.',
-      ],
+      steps: ['Grill chicken until cooked.', 'Cook rice.', 'Steam vegetables and serve together.'],
     },
     {
       name: 'Chicken Pasta Primavera',
@@ -214,11 +307,7 @@ const mealPools: Record<Meal['type'], Omit<Meal, 'id' | 'type'>[]> = {
         { name: 'Chicken', quantity: '120g', category: 'protein' },
         { name: 'Mixed vegetables', quantity: '1 cup', category: 'vegetables' },
       ],
-      steps: [
-        'Boil pasta.',
-        'Cook chicken.',
-        'Mix with vegetables and light sauce.',
-      ],
+      steps: ['Boil pasta.', 'Cook chicken.', 'Mix with vegetables and light sauce.'],
     },
   ],
   dinner: [
@@ -340,13 +429,6 @@ export function ChildProfileProvider({
   const [childrenList, setChildrenList] = useState<ChildProfile[]>([]);
   const [activeChild, setActiveChildState] = useState<ChildProfile | null>(null);
 
-  /**
-   * childMeals 现在支持 guest。
-   * key 可以是：
-   * guest
-   * child-1
-   * child-2
-   */
   const [childMeals, setChildMeals] = useState<
     Record<string, Record<string, Meal[]>>
   >({});
@@ -370,15 +452,49 @@ export function ChildProfileProvider({
 
   const ownerKey = getOwnerKeyFromChild(activeChild);
 
-  const nutritionNeeds = nutritionNeedsByOwner[ownerKey] || {
-    calories: 0,
-    carbs: 155,
-    protein: 32,
-    fat: 28,
-  };
+  const nutritionNeeds =
+    nutritionNeedsByOwner[ownerKey] || DEFAULT_NUTRITION_NEEDS;
 
   const savedRecipes = savedRecipesByOwner[ownerKey] || [];
   const shoppingList = shoppingListByOwner[ownerKey] || [];
+
+  const refreshNutritionNeedsForChild = async (child: ChildProfile) => {
+    const heightCm = Number(child.height);
+    const weightKg = Number(child.weight);
+    const ageMonths = getAgeMonths(child);
+    const gender = child.gender === 'girl' ? 2 : 1;
+    const childOwnerKey = getOwnerKeyFromChild(child);
+
+    if (!heightCm || !weightKg || !ageMonths) {
+      setNutritionNeedsByOwner((prev) => ({
+        ...prev,
+        [childOwnerKey]: prev[childOwnerKey] || DEFAULT_NUTRITION_NEEDS,
+      }));
+      return;
+    }
+
+    const result = await getFoodNutritionNeeds({
+      heightCm,
+      weightKg,
+      ageMonths,
+      gender,
+    });
+
+    if (!result.ok) {
+      setNutritionNeedsByOwner((prev) => ({
+        ...prev,
+        [childOwnerKey]: prev[childOwnerKey] || DEFAULT_NUTRITION_NEEDS,
+      }));
+      return;
+    }
+
+    const nextNeeds = parseNutritionNeeds(result.data);
+
+    setNutritionNeedsByOwner((prev) => ({
+      ...prev,
+      [childOwnerKey]: nextNeeds,
+    }));
+  };
 
   useEffect(() => {
     const loadAll = async () => {
@@ -409,6 +525,11 @@ export function ChildProfileProvider({
 
         setChildrenList(validChildren);
 
+        const parsedNeeds = rawNutritionNeeds ? JSON.parse(rawNutritionNeeds) : {};
+        const validNeeds =
+          parsedNeeds && typeof parsedNeeds === 'object' ? parsedNeeds : {};
+        setNutritionNeedsByOwner(validNeeds);
+
         const parsedActiveChildId = rawActiveChildId
           ? Number(rawActiveChildId)
           : null;
@@ -429,20 +550,17 @@ export function ChildProfileProvider({
 
         if (rawMeals) {
           const parsedMeals = JSON.parse(rawMeals);
-          setChildMeals(parsedMeals && typeof parsedMeals === 'object' ? parsedMeals : {});
-        }
-
-        if (rawNutritionNeeds) {
-          const parsedNeeds = JSON.parse(rawNutritionNeeds);
-          setNutritionNeedsByOwner(
-            parsedNeeds && typeof parsedNeeds === 'object' ? parsedNeeds : {}
+          setChildMeals(
+            parsedMeals && typeof parsedMeals === 'object' ? parsedMeals : {}
           );
         }
 
         if (rawSavedRecipes) {
           const parsedRecipes = JSON.parse(rawSavedRecipes);
           setSavedRecipesByOwner(
-            parsedRecipes && typeof parsedRecipes === 'object' ? parsedRecipes : {}
+            parsedRecipes && typeof parsedRecipes === 'object'
+              ? parsedRecipes
+              : {}
           );
         }
 
@@ -454,6 +572,15 @@ export function ChildProfileProvider({
               : {}
           );
         }
+
+        setTimeout(() => {
+          validChildren.forEach((child) => {
+            const key = getOwnerKeyFromChild(child);
+            if (!hasValidNutritionNeeds(validNeeds[key])) {
+              refreshNutritionNeedsForChild(child);
+            }
+          });
+        }, 0);
       } catch (error) {
         console.log('Load child profile context failed:', error);
       } finally {
@@ -491,12 +618,11 @@ export function ChildProfileProvider({
   useEffect(() => {
     if (!loaded) return;
 
-    AsyncStorage.setItem(
-      CHILD_MEALS_STORAGE_KEY,
-      JSON.stringify(childMeals)
-    ).catch((error) => {
-      console.log('Save meals failed:', error);
-    });
+    AsyncStorage.setItem(CHILD_MEALS_STORAGE_KEY, JSON.stringify(childMeals)).catch(
+      (error) => {
+        console.log('Save meals failed:', error);
+      }
+    );
   }, [childMeals, loaded]);
 
   useEffect(() => {
@@ -534,6 +660,13 @@ export function ChildProfileProvider({
 
   const setActiveChild = (child: ChildProfile | null) => {
     setActiveChildState(child);
+
+    if (child) {
+      const key = getOwnerKeyFromChild(child);
+      if (!hasValidNutritionNeeds(nutritionNeedsByOwner[key])) {
+        refreshNutritionNeedsForChild(child);
+      }
+    }
   };
 
   const addChild = (child: ChildProfile) => {
@@ -553,6 +686,7 @@ export function ChildProfileProvider({
     }));
 
     setActiveChildState(child);
+    refreshNutritionNeedsForChild(child);
   };
 
   const updateChild = (child: ChildProfile) => {
@@ -563,6 +697,8 @@ export function ChildProfileProvider({
     if (activeChild?.id === child.id) {
       setActiveChildState(child);
     }
+
+    refreshNutritionNeedsForChild(child);
   };
 
   const removeChild = (childId: number) => {
@@ -605,7 +741,6 @@ export function ChildProfileProvider({
 
   const switchToChild = (childId: number) => {
     const child = childrenList.find((item) => item.id === childId);
-
     if (!child) return;
 
     setActiveChildState(child);
@@ -614,6 +749,11 @@ export function ChildProfileProvider({
       ...prev,
       [`child-${childId}`]: prev[`child-${childId}`] ?? {},
     }));
+
+    const key = getOwnerKeyFromChild(child);
+    if (!hasValidNutritionNeeds(nutritionNeedsByOwner[key])) {
+      refreshNutritionNeedsForChild(child);
+    }
   };
 
   const getOwnerKey = () => getOwnerKeyFromChild(activeChild);
@@ -723,19 +863,19 @@ export function ChildProfileProvider({
           (sum, item) => sum + item.carbs * 4 + item.protein * 4 + item.fat * 9,
           0
         ),
-        target: nutritionNeeds.calories || 0,
+        target: nutritionNeeds.calories || DEFAULT_NUTRITION_NEEDS.calories,
       },
       carbs: {
         current: currentMeals.reduce((sum, item) => sum + item.carbs, 0),
-        target: nutritionNeeds.carbs || 155,
+        target: nutritionNeeds.carbs || DEFAULT_NUTRITION_NEEDS.carbs,
       },
       protein: {
         current: currentMeals.reduce((sum, item) => sum + item.protein, 0),
-        target: nutritionNeeds.protein || 32,
+        target: nutritionNeeds.protein || DEFAULT_NUTRITION_NEEDS.protein,
       },
       fat: {
         current: currentMeals.reduce((sum, item) => sum + item.fat, 0),
-        target: nutritionNeeds.fat || 28,
+        target: nutritionNeeds.fat || DEFAULT_NUTRITION_NEEDS.fat,
       },
     };
   }, [childMeals, ownerKey, selectedDate, nutritionNeeds]);
@@ -744,12 +884,7 @@ export function ChildProfileProvider({
     setNutritionNeedsByOwner((prev) => ({
       ...prev,
       [ownerKey]: {
-        ...(prev[ownerKey] ?? {
-          calories: 0,
-          carbs: 155,
-          protein: 32,
-          fat: 28,
-        }),
+        ...(prev[ownerKey] ?? DEFAULT_NUTRITION_NEEDS),
         ...needs,
       },
     }));
@@ -852,6 +987,8 @@ export function ChildProfileProvider({
         deleteMeal,
         toggleMeal,
         nutritionProgress,
+        nutritionNeeds,
+        refreshNutritionNeedsForChild,
         setNutritionNeeds,
         getTip,
         shoppingList,

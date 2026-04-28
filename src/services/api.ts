@@ -96,7 +96,7 @@ export async function getFoodNutritionNeeds(params: {
   const url = `${API_BASE_URL}/food/getFoodNutritionNeeds?${query.toString()}`;
 
   return safeFetchJson<any>(url, {
-    method: 'GET',
+    method: 'POST',
     headers: {
       Accept: 'application/json',
     },
