@@ -8,6 +8,10 @@ import {
   Text,
   TextInput,
   View,
+  Image, //Health Insights, JJ
+  Modal, //Health Insights, JJ
+  Linking,
+  TouchableOpacity, //Health Insights, JJ
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -30,6 +34,10 @@ import LanguageModal from '../components/LanguageModal';
 import MealPlanDurationModal from '../components/MealPlanDurationModal';
 import AddChildModal from '../components/AddChildModal';
 import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
+// Use for Markdown format of Health Insights, JJ
+import Markdown from 'react-native-markdown-display';
+// Use for details of each type of health insights, JJ
+import { FileText, X, ExternalLink } from 'lucide-react-native';
 
 type FoodSuggestion = {
   label: string;
@@ -61,6 +69,11 @@ export default function HomeScreen() {
   const [suggestions, setSuggestions] = useState<FoodSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  const [allTopics, setAllTopics] = useState<any[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(true);
+  const [selectedTopic, setSelectedTopic] = useState<any>(null);
+  const [showTopicModal, setShowTopicModal] = useState(false);
+
   const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
 
   const allGoalsMet =
@@ -87,6 +100,23 @@ export default function HomeScreen() {
   const getChildChipLabel = (child: any) => {
     return child.avatarImageUri ? child.nickname : `${child.avatar} ${child.nickname}`;
   };
+
+  useEffect(() => {
+    const fetchTopics = async () => {
+      try {
+        const response = await fetch(`${BASE_URL}/api/topics/all`);
+        if (response.ok) {
+          const data = await response.json();
+          setAllTopics(data);
+        }
+      } catch (error) {
+        console.error("Topics Fetch Error:", error);
+      } finally {
+        setTopicsLoading(false);
+      }
+    };
+    fetchTopics();
+  }, []);
 
   useEffect(() => {
     const query = searchText.trim();
@@ -164,6 +194,15 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, [searchText, language]);
 
+  // ==========================================
+  // 3. 辅助函数与变量计算
+  // ==========================================
+  const reportTopics = allTopics.filter(t => t.category === 'REPORT');
+  const dietTopics = allTopics.filter(t => t.category === 'DIET');
+  const sportTopics = allTopics.filter(t => t.category === 'SPORT');
+  const habitTopics = allTopics.filter(t => t.category === 'HABIT');
+  const displayTopics = [...reportTopics, ...habitTopics, ...sportTopics, ...dietTopics];
+
   const handleFoodSearch = (value?: string) => {
     const foodName = (value ?? searchText).trim();
 
@@ -194,26 +233,6 @@ export default function HomeScreen() {
     });
   };
   
-  const healthInsights = [
-    {
-      title: t('balancedNutrition'),
-      desc: t('balancedNutritionDesc'),
-      emoji: '🥗',
-      toneStyle: styles.nutritionIconBox,
-    },
-    {
-      title: t('hydrationTips'),
-      desc: t('hydrationDesc'),
-      emoji: '💧',
-      toneStyle: styles.hydrationIconBox,
-    },
-    {
-      title: t('activeLifestyle'),
-      desc: t('activeDesc'),
-      emoji: '🏃',
-      toneStyle: styles.activityIconBox,
-    },
-  ];
 
   return (
     <>
@@ -511,27 +530,103 @@ export default function HomeScreen() {
             </Text>
           </Pressable>
 
-          {/* Health Insights */}
-          <SectionTitle title={t('healthInsights')} />
+          {/* Health Insights */} // JJ: Recovered
+          <SectionTitle title={t('Health Insights')} />
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.healthInsightsScroll}
-          >
-            {healthInsights.map((insight) => (
-              <View key={insight.title} style={styles.insightCard}>
-                <View style={[styles.insightIconBox, insight.toneStyle]}>
-                  <Text style={styles.insightEmoji}>{insight.emoji}</Text>
-                </View>
+          {topicsLoading ? (
+             <ActivityIndicator size="small" color={colors.primaryDark} style={{ paddingVertical: 20 }} />
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.displayTopicsScroll}
+            >
+              {displayTopics.map((topic) => (
+                <Pressable 
+                  key={topic.id || topic.title} 
+                  style={styles.topicCard}
+                  onPress={() => {
+                    setSelectedTopic(topic);
+                    setShowTopicModal(true);
+                  }}
+                >
+                  {/* 1. 悬浮的黑色半透明标签 (保留旧版设计) */}
+                  <View style={styles.topicCategoryBadge}>
+                    <Text style={styles.topicCategoryText}>
+                      {topic?.category || "INSIGHT"}
+                    </Text>
+                  </View>
 
-                <Text style={styles.insightTitle}>{insight.title}</Text>
-                <Text style={styles.insightDesc}>{insight.desc}</Text>
-              </View>
-            ))}
-          </ScrollView>
+                  {/* 2. 封面大图 (保留旧版设计) */}
+                  <Image 
+                    source={{ uri: topic.imageUrl }} 
+                    style={styles.topicImage} 
+                    resizeMode="cover" 
+                  />
+
+                  {/* 3. 底部文字区 (保留旧版设计) */}
+                  <View style={styles.topicTextContainer}>
+                    <Text style={styles.topicTitle} numberOfLines={2}>
+                      {topic.title}
+                    </Text>
+                    <Text style={styles.topicSummary} numberOfLines={2}>
+                      {topic.summary}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </View>
       </Screen>
+
+      <Modal visible={showTopicModal} transparent animationType="fade">
+        {/* 1. Change to modalOverlay */}
+        <View style={styles.modalOverlay}>
+          {selectedTopic && (
+            <View style={styles.modalContent}>
+              
+              {/* 3. Change the top image area style */}
+              <View style={styles.modalImageWrap}>
+                <Image source={{ uri: selectedTopic.imageUrl }} style={styles.modalImage} resizeMode="cover" />
+                <TouchableOpacity onPress={() => setShowTopicModal(false)} style={styles.modalCloseBtn}>
+                  <X color="#FFFFFF" size={20} />
+                </TouchableOpacity>
+              </View>
+              
+              {/* 4. Change the article scroll area style */}
+              <ScrollView contentContainerStyle={styles.modalBody}>
+                <View style={styles.modalTagRow}>
+                  <FileText color={colors.primaryDark} size={18} />
+                  <Text style={styles.modalTagText}>Health Insights</Text>
+                </View>
+                
+                <Text style={styles.modalTitle}>{selectedTopic.title}</Text>
+                
+                <Markdown
+                  style={{
+                    body: { color: '#475569', fontSize: 16, lineHeight: 24 },
+                    strong: { fontWeight: 'bold', color: '#2F3A3A' },
+                    ordered_list_icon: { color: colors.primaryDark, fontWeight: 'bold' }
+                  }}
+                >
+                  {selectedTopic.content}
+                </Markdown>
+              </ScrollView>
+              
+              {/* 5. Change the bottom button style */}
+              {selectedTopic.sourceUrl && (
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity onPress={() => Linking.openURL(selectedTopic.sourceUrl)} style={styles.modalActionBtn}>
+                    <ExternalLink color="#3B82F6" size={18} />
+                    <Text style={styles.modalActionText}>Read Original</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </Modal>
 
       <LanguageModal
         visible={showLanguage}
@@ -839,34 +934,120 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  healthInsightsScroll: {
+ displayTopicsScroll: {
     paddingBottom: 8,
-    gap: 12,
+    gap: 16, // 旧版 UI 的间距
   },
-
-  insightCard: {
-    width: 240,
+  
+  // Start, Recover the old structure of health insight.
+  topicCard: {
+    width: 256, // 对应旧版 w-64
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 24, // 对应旧版 rounded-3xl
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#F3F4F6', // 对应旧版 border-gray-100
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 3,
   },
 
-  insightIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+  topicCategoryBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)', // 对应 bg-black/50
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
+
+  topicCategoryText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+
+  topicImage: {
+    width: '100%',
+    height: 160, // 对应旧版 h-40
+  },
+
+  topicTextContainer: {
+    padding: 16,
+  },
+
+  topicTitle: {
+    fontWeight: 'bold',
+    color: '#2F3A3A',
+    fontSize: 16,
+    marginBottom: 4,
+  },
+
+  topicSummary: {
+    fontSize: 12,
+    color: '#7A8A8A',
+  },
+
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.6)', 
+    justifyContent: 'center', 
+    paddingHorizontal: 24 
+  },
+
+  modalContent: { 
+    width: '100%', 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 24, 
+    overflow: 'hidden', 
+    maxHeight: '85%' 
+  },
+
+  modalImageWrap: { width: '100%', height: 180, position: 'relative' },
+
+  modalImage: { width: '100%', height: '100%' },
+
+  modalCloseBtn: { 
+    position: 'absolute', 
+    top: 16, 
+    right: 16, 
+    backgroundColor: 'rgba(0,0,0,0.4)', 
+    padding: 8, 
+    borderRadius: 24 
+  },
+
+  modalBody: { padding: 24 },
+
+  modalTagRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+
+  modalTagText: { color: colors.primaryDark, fontWeight: '600', fontSize: 14 },
+
+  modalTitle: { fontSize: 24, fontWeight: 'bold', color: '#2F3A3A', marginBottom: 16, lineHeight: 32 },
+
+  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#F3F4F6', backgroundColor: '#F9FAFB' },
+
+  modalActionBtn: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 8, 
+    backgroundColor: 'white', 
+    paddingVertical: 14, 
+    borderRadius: 16, 
+    borderWidth: 1, 
+    borderColor: '#E5E7EB' 
+  },
+
+  modalActionText: { color: '#3B82F6', fontWeight: 'bold', fontSize: 16 },
+  // End, Recovery of the old design of health insights, JJ
 
   nutritionIconBox: {
     backgroundColor: '#E8F5E9',
