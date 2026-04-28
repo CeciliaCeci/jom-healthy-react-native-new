@@ -1,7 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useChildProfile } from '../context/ChildProfileContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -30,12 +39,78 @@ type ShoppingItem = {
   checked: boolean;
 };
 
+type SupermarketItem = {
+  id: string;
+  name: string;
+  subtitle: string;
+  mapQuery: string;
+  icon: keyof typeof Ionicons.glyphMap;
+};
+
 const categoryIcons: Record<ShoppingCategory, keyof typeof Ionicons.glyphMap> = {
   vegetables: 'leaf',
   protein: 'fitness',
   carbs: 'pizza',
   others: 'basket',
 };
+
+const nearbySupermarkets: SupermarketItem[] = [
+  {
+    id: 'nearby',
+    name: 'Supermarkets Near Me',
+    subtitle: 'Find the closest supermarket using Google Maps',
+    mapQuery: 'supermarket near me',
+    icon: 'location',
+  },
+  {
+    id: 'grocery',
+    name: 'Grocery Stores Near Me',
+    subtitle: 'Search for grocery stores around your current area',
+    mapQuery: 'grocery store near me',
+    icon: 'basket',
+  },
+  {
+    id: 'jaya-grocer',
+    name: 'Jaya Grocer',
+    subtitle: 'Premium supermarket and fresh groceries',
+    mapQuery: 'Jaya Grocer near me',
+    icon: 'storefront',
+  },
+  {
+    id: 'lotus',
+    name: "Lotus's",
+    subtitle: 'Large supermarket for daily ingredients',
+    mapQuery: "Lotus's supermarket near me",
+    icon: 'cart',
+  },
+  {
+    id: 'aeon',
+    name: 'AEON / AEON Big',
+    subtitle: 'Supermarket, grocery and household items',
+    mapQuery: 'AEON supermarket near me',
+    icon: 'business',
+  },
+  {
+    id: 'nsK',
+    name: 'NSK Trade City',
+    subtitle: 'Fresh produce, meat, seafood and bulk groceries',
+    mapQuery: 'NSK Trade City near me',
+    icon: 'pricetags',
+  },
+  {
+    id: 'speedmart',
+    name: '99 Speedmart',
+    subtitle: 'Convenience groceries and basic ingredients',
+    mapQuery: '99 Speedmart near me',
+    icon: 'bag-handle',
+  },
+];
+
+function buildGoogleMapsUrl(query: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    query
+  )}`;
+}
 
 export default function ShoppingScreen() {
   const navigation = useNavigation<any>();
@@ -45,6 +120,7 @@ export default function ShoppingScreen() {
   const ownerKey = getOwnerKey();
 
   const [showLanguage, setShowLanguage] = useState(false);
+  const [showSupermarkets, setShowSupermarkets] = useState(false);
   const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
 
   const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
@@ -108,6 +184,48 @@ export default function ShoppingScreen() {
     await saveShoppingList(nextList);
   };
 
+  const openGoogleMaps = async (query: string) => {
+    const url = buildGoogleMapsUrl(query);
+
+    try {
+      const supported = await Linking.canOpenURL(url);
+
+      if (!supported) {
+        Alert.alert('Cannot Open Maps', 'Unable to open Google Maps.');
+        return;
+      }
+
+      await Linking.openURL(url);
+    } catch (error) {
+      console.log('Open Google Maps failed:', error);
+      Alert.alert('Error', 'Unable to open Google Maps.');
+    }
+  };
+
+  const openGrabMart = async () => {
+    const grabMartUrl = 'https://food.grab.com/my/en/';
+    const grabAppUrl = 'grab://open';
+
+    try {
+      const canOpenGrabApp = await Linking.canOpenURL(grabAppUrl);
+
+      if (canOpenGrabApp) {
+        await Linking.openURL(grabAppUrl);
+        return;
+      }
+
+      await Linking.openURL(grabMartUrl);
+    } catch (error) {
+      console.log('Open Grab failed:', error);
+
+      try {
+        await Linking.openURL(grabMartUrl);
+      } catch {
+        Alert.alert('Error', 'Unable to open Grab.');
+      }
+    }
+  };
+
   const grouped = useMemo(() => {
     return shoppingList.reduce((acc, item) => {
       acc[item.category] = acc[item.category] || [];
@@ -159,6 +277,40 @@ export default function ShoppingScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.body}
         >
+          <Card>
+            <View style={styles.supermarketHeader}>
+              <View style={styles.supermarketIconBox}>
+                <Ionicons
+                  name="storefront"
+                  size={22}
+                  color={colors.primaryDark}
+                />
+              </View>
+
+              <View style={styles.supermarketInfo}>
+                <Text style={styles.supermarketTitle}>Nearby Supermarkets</Text>
+                <Text style={styles.supermarketSubtitle}>
+                  Find ingredients in stores near you or order with GrabMart.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.supermarketActionRow}>
+              <Pressable
+                style={styles.nearbyButton}
+                onPress={() => setShowSupermarkets(true)}
+              >
+                <Ionicons name="location-outline" size={17} color="#FFFFFF" />
+                <Text style={styles.nearbyButtonText}>Find Nearby</Text>
+              </Pressable>
+
+              <Pressable style={styles.grabButton} onPress={openGrabMart}>
+                <Ionicons name="bag-handle-outline" size={17} color="#12A150" />
+                <Text style={styles.grabButtonText}>Open GrabMart</Text>
+              </Pressable>
+            </View>
+          </Card>
+
           {totalCount === 0 ? (
             <EmptyState
               emoji="🛒"
@@ -285,6 +437,77 @@ export default function ShoppingScreen() {
         </ScrollView>
       </Screen>
 
+      <Modal
+        visible={showSupermarkets}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSupermarkets(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setShowSupermarkets(false)}
+        >
+          <Pressable style={styles.supermarketModal} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Nearby Supermarkets</Text>
+                <Text style={styles.modalSubtitle}>
+                  Tap a store to open it in Google Maps.
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.modalCloseButton}
+                onPress={() => setShowSupermarkets(false)}
+              >
+                <Ionicons name="close" size={20} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.supermarketList}
+            >
+              {nearbySupermarkets.map((market) => (
+                <Pressable
+                  key={market.id}
+                  style={styles.marketRow}
+                  onPress={() => openGoogleMaps(market.mapQuery)}
+                >
+                  <View style={styles.marketIcon}>
+                    <Ionicons
+                      name={market.icon}
+                      size={20}
+                      color={colors.primaryDark}
+                    />
+                  </View>
+
+                  <View style={styles.marketInfo}>
+                    <Text style={styles.marketName}>{market.name}</Text>
+                    <Text style={styles.marketSubtitle}>{market.subtitle}</Text>
+                  </View>
+
+                  <Ionicons
+                    name="map-outline"
+                    size={20}
+                    color={colors.primaryDark}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <Pressable style={styles.modalGrabButton} onPress={openGrabMart}>
+                <Ionicons name="bag-handle" size={18} color="#FFFFFF" />
+                <Text style={styles.modalGrabButtonText}>Open GrabMart</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <LanguageModal
         visible={showLanguage}
         onClose={() => setShowLanguage(false)}
@@ -312,6 +535,81 @@ const styles = StyleSheet.create({
   langText: {
     color: '#FFFFFF',
     fontWeight: '800',
+  },
+
+  supermarketHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  supermarketIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  supermarketInfo: {
+    flex: 1,
+  },
+
+  supermarketTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  supermarketSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+    marginTop: 3,
+  },
+
+  supermarketActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+
+  nearbyButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 18,
+    backgroundColor: colors.primaryDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+
+  nearbyButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 13,
+  },
+
+  grabButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 18,
+    backgroundColor: '#EAF7F0',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+
+  grabButtonText: {
+    color: '#12A150',
+    fontWeight: '900',
+    fontSize: 13,
   },
 
   progressHeader: {
@@ -471,5 +769,129 @@ const styles = StyleSheet.create({
   checkDone: {
     borderColor: colors.primaryDark,
     backgroundColor: colors.primaryDark,
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    justifyContent: 'flex-end',
+  },
+
+  supermarketModal: {
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingTop: 10,
+    maxHeight: '82%',
+  },
+
+  modalHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+
+  modalHeader: {
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+
+  modalTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+
+  modalSubtitle: {
+    color: colors.muted,
+    fontSize: 13,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+
+  modalCloseButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  supermarketList: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    gap: 10,
+  },
+
+  marketRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+
+  marketIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  marketInfo: {
+    flex: 1,
+  },
+
+  marketName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  marketSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+    marginTop: 3,
+  },
+
+  modalFooter: {
+    padding: 20,
+    paddingTop: 12,
+    backgroundColor: '#F8FAFC',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+
+  modalGrabButton: {
+    height: 50,
+    borderRadius: 20,
+    backgroundColor: '#12A150',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  modalGrabButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });
