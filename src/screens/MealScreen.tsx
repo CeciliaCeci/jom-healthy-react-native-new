@@ -120,8 +120,16 @@ function getMonthDays(monthDate: Date) {
   const month = monthDate.getMonth();
 
   const firstDay = new Date(year, month, 1);
-  const startWeekDay = firstDay.getDay();
-  const startDate = addDays(firstDay, -startWeekDay);
+
+  /**
+   * JS getDay():
+   * Sunday = 0, Monday = 1, Tuesday = 2, ... Saturday = 6
+   *
+   * Calendar should start from Monday:
+   * Monday = 0, Tuesday = 1, ... Sunday = 6
+   */
+  const mondayBasedWeekDay = (firstDay.getDay() + 6) % 7;
+  const startDate = addDays(firstDay, -mondayBasedWeekDay);
 
   return Array.from({ length: 42 }).map((_, index) =>
     addDays(startDate, index)
@@ -381,6 +389,16 @@ export default function MealScreen() {
     [calendarMonth]
   );
 
+  const calendarWeeks = useMemo(() => {
+    const weeks: Date[][] = [];
+
+    for (let i = 0; i < calendarDays.length; i += 7) {
+      weeks.push(calendarDays.slice(i, i + 7));
+    }
+
+    return weeks;
+  }, [calendarDays]);
+
   const totals = useMemo(() => {
     const meals = SLOT_ORDER.map((slot) => selectedDayPlan[slot]).filter(
       Boolean
@@ -619,8 +637,8 @@ export default function MealScreen() {
             </Text>
 
             <Text style={styles.suggestionNutrition}>
-              {round(meal.totalEnergyKcal)} kcal · P {round(meal.totalProteinG)}g · C{' '}
-              {round(meal.totalCarbohydrateG)}g · F {round(meal.totalFatG)}g
+              {round(meal.totalEnergyKcal)} kcal · P {round(meal.totalProteinG)}g
+              · C {round(meal.totalCarbohydrateG)}g · F {round(meal.totalFatG)}g
             </Text>
           </View>
         </Pressable>
@@ -1028,7 +1046,7 @@ export default function MealScreen() {
             </View>
 
             <View style={styles.weekRow}>
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
                 <Text key={day} style={styles.weekText}>
                   {day}
                 </Text>
@@ -1036,40 +1054,44 @@ export default function MealScreen() {
             </View>
 
             <View style={styles.calendarGrid}>
-              {calendarDays.map((date) => {
-                const key = formatDateKey(date);
-                const isCurrentMonth =
-                  date.getMonth() === calendarMonth.getMonth();
-                const isSelected = key === selectedKey;
-                const isToday = key === todayKey;
+              {calendarWeeks.map((week, weekIndex) => (
+                <View key={`week-${weekIndex}`} style={styles.calendarWeekRow}>
+                  {week.map((date) => {
+                    const key = formatDateKey(date);
+                    const isCurrentMonth =
+                      date.getMonth() === calendarMonth.getMonth();
+                    const isSelected = key === selectedKey;
+                    const isToday = key === todayKey;
 
-                return (
-                  <Pressable
-                    key={key}
-                    style={styles.calendarCell}
-                    onPress={() => selectCalendarDate(date)}
-                  >
-                    <View
-                      style={[
-                        styles.calendarDateCircle,
-                        isToday && styles.calendarDateToday,
-                        isSelected && styles.calendarDateSelected,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.calendarDateText,
-                          !isCurrentMonth && styles.calendarDateMuted,
-                          isToday && styles.calendarDateTodayText,
-                          isSelected && styles.calendarDateTextSelected,
-                        ]}
+                    return (
+                      <Pressable
+                        key={key}
+                        style={styles.calendarCell}
+                        onPress={() => selectCalendarDate(date)}
                       >
-                        {date.getDate()}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
+                        <View
+                          style={[
+                            styles.calendarDateCircle,
+                            isToday && styles.calendarDateToday,
+                            isSelected && styles.calendarDateSelected,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.calendarDateText,
+                              !isCurrentMonth && styles.calendarDateMuted,
+                              isToday && styles.calendarDateTodayText,
+                              isSelected && styles.calendarDateTextSelected,
+                            ]}
+                          >
+                            {date.getDate()}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
 
             <View style={styles.calendarFooter}>
@@ -1772,14 +1794,18 @@ const styles = StyleSheet.create({
   },
 
   calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 14,
     paddingBottom: 10,
   },
 
+  calendarWeekRow: {
+    flexDirection: 'row',
+    width: '100%',
+    height: 46,
+  },
+
   calendarCell: {
-    width: `${100 / 7}%`,
+    flex: 1,
     height: 46,
     alignItems: 'center',
     justifyContent: 'center',
