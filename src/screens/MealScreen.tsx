@@ -75,6 +75,8 @@ type ShoppingItem = {
   checked: boolean;
 };
 
+type CalendarNutritionStatus = 'tooMuch' | 'good' | 'tooLittle' | 'none';
+
 const MEAL_PLANS_STORAGE_KEY = 'JOMHEALTHY_MEAL_PLANS_BY_OWNER_V1';
 const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_SHOPPING_LIST_BY_OWNER_V1';
 
@@ -84,6 +86,13 @@ const DEFAULT_TARGETS = {
   carbs: 155,
   protein: 32,
   fat: 28,
+};
+
+const STATUS_COLORS: Record<CalendarNutritionStatus, string> = {
+  tooMuch: '#FF6B6B',
+  good: '#18C37E',
+  tooLittle: '#FACC15',
+  none: '#E5E7EB',
 };
 
 function safeNumber(value: any) {
@@ -134,6 +143,83 @@ function getMonthDays(monthDate: Date) {
   return Array.from({ length: 42 }).map((_, index) =>
     addDays(startDate, index)
   );
+}
+
+function getMealPlanTotals(dayPlan: MealPlanForDay) {
+  const meals = SLOT_ORDER.map((slot) => dayPlan[slot]).filter(
+    Boolean
+  ) as MealRecipe[];
+
+  return meals.reduce(
+    (acc, meal) => {
+      acc.carbs += safeNumber(meal.totalCarbohydrateG);
+      acc.protein += safeNumber(meal.totalProteinG);
+      acc.fat += safeNumber(meal.totalFatG);
+      acc.calories += safeNumber(meal.totalEnergyKcal);
+      acc.count += 1;
+      return acc;
+    },
+    {
+      carbs: 0,
+      protein: 0,
+      fat: 0,
+      calories: 0,
+      count: 0,
+    }
+  );
+}
+
+function getCalendarStatus(
+  dayPlan: MealPlanForDay | undefined,
+  targets: {
+    carbs: number;
+    protein: number;
+    fat: number;
+  }
+): {
+  status: CalendarNutritionStatus;
+  progress: number;
+} {
+  if (!dayPlan) {
+    return {
+      status: 'none',
+      progress: 0,
+    };
+  }
+
+  const totals = getMealPlanTotals(dayPlan);
+
+  if (totals.count === 0) {
+    return {
+      status: 'none',
+      progress: 0,
+    };
+  }
+
+  const carbRatio = totals.carbs / Math.max(targets.carbs, 1);
+  const proteinRatio = totals.protein / Math.max(targets.protein, 1);
+  const fatRatio = totals.fat / Math.max(targets.fat, 1);
+
+  const averageRatio = (carbRatio + proteinRatio + fatRatio) / 3;
+
+  if (averageRatio > 1.15) {
+    return {
+      status: 'tooMuch',
+      progress: Math.min(averageRatio, 1),
+    };
+  }
+
+  if (averageRatio < 0.75) {
+    return {
+      status: 'tooLittle',
+      progress: Math.max(averageRatio, 0.18),
+    };
+  }
+
+  return {
+    status: 'good',
+    progress: Math.min(averageRatio, 1),
+  };
 }
 
 function normalizeIngredientName(item: any) {
@@ -343,6 +429,108 @@ function NutritionRing({
   );
 }
 
+function CalendarDateCell({
+  date,
+  isCurrentMonth,
+  isSelected,
+  isToday,
+  status,
+  progress,
+  onPress,
+}: {
+  date: Date;
+  isCurrentMonth: boolean;
+  isSelected: boolean;
+  isToday: boolean;
+  status: CalendarNutritionStatus;
+  progress: number;
+  onPress: () => void;
+}) {
+  const hasStatus = status !== 'none';
+  const statusColor = STATUS_COLORS[status];
+
+  const size = 38;
+  const strokeWidth = 3.5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - Math.min(progress, 1));
+
+  return (
+    <Pressable style={styles.calendarCell} onPress={onPress}>
+      <View style={styles.calendarDateWrap}>
+        {hasStatus && !isSelected ? (
+          <>
+            <Svg width={size} height={size} style={styles.calendarRingSvg}>
+              <Circle
+                stroke="#F1F5F9"
+                fill="none"
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                strokeWidth={strokeWidth}
+              />
+
+              <Circle
+                stroke={statusColor}
+                fill="none"
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                strokeWidth={strokeWidth}
+                strokeDasharray={`${circumference} ${circumference}`}
+                strokeDashoffset={dashOffset}
+                strokeLinecap="round"
+                rotation="-90"
+                origin={`${size / 2}, ${size / 2}`}
+              />
+            </Svg>
+
+            <View style={styles.calendarRingNumber}>
+              <Text
+                style={[
+                  styles.calendarDateText,
+                  !isCurrentMonth && styles.calendarDateMuted,
+                  isToday && styles.calendarDateTodayText,
+                ]}
+              >
+                {date.getDate()}
+              </Text>
+            </View>
+          </>
+        ) : (
+          <View
+            style={[
+              styles.calendarDateCircle,
+              isToday && styles.calendarDateToday,
+              isSelected && styles.calendarDateSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.calendarDateText,
+                !isCurrentMonth && styles.calendarDateMuted,
+                isToday && styles.calendarDateTodayText,
+                isSelected && styles.calendarDateTextSelected,
+              ]}
+            >
+              {date.getDate()}
+            </Text>
+          </View>
+        )}
+
+        {hasStatus && (
+          <View
+            style={[
+              styles.calendarNutritionDot,
+              { backgroundColor: statusColor },
+            ]}
+          />
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 export default function MealScreen() {
   const navigation = useNavigation<any>();
 
@@ -400,25 +588,7 @@ export default function MealScreen() {
   }, [calendarDays]);
 
   const totals = useMemo(() => {
-    const meals = SLOT_ORDER.map((slot) => selectedDayPlan[slot]).filter(
-      Boolean
-    ) as MealRecipe[];
-
-    return meals.reduce(
-      (acc, meal) => {
-        acc.carbs += safeNumber(meal.totalCarbohydrateG);
-        acc.protein += safeNumber(meal.totalProteinG);
-        acc.fat += safeNumber(meal.totalFatG);
-        acc.calories += safeNumber(meal.totalEnergyKcal);
-        return acc;
-      },
-      {
-        carbs: 0,
-        protein: 0,
-        fat: 0,
-        calories: 0,
-      }
-    );
+    return getMealPlanTotals(selectedDayPlan);
   }, [selectedDayPlan]);
 
   useEffect(() => {
@@ -1062,32 +1232,23 @@ export default function MealScreen() {
                       date.getMonth() === calendarMonth.getMonth();
                     const isSelected = key === selectedKey;
                     const isToday = key === todayKey;
+                    const dayPlan = mealPlans[key];
+                    const statusInfo = getCalendarStatus(
+                      dayPlan,
+                      currentTargets
+                    );
 
                     return (
-                      <Pressable
+                      <CalendarDateCell
                         key={key}
-                        style={styles.calendarCell}
+                        date={date}
+                        isCurrentMonth={isCurrentMonth}
+                        isSelected={isSelected}
+                        isToday={isToday}
+                        status={statusInfo.status}
+                        progress={statusInfo.progress}
                         onPress={() => selectCalendarDate(date)}
-                      >
-                        <View
-                          style={[
-                            styles.calendarDateCircle,
-                            isToday && styles.calendarDateToday,
-                            isSelected && styles.calendarDateSelected,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.calendarDateText,
-                              !isCurrentMonth && styles.calendarDateMuted,
-                              isToday && styles.calendarDateTodayText,
-                              isSelected && styles.calendarDateTextSelected,
-                            ]}
-                          >
-                            {date.getDate()}
-                          </Text>
-                        </View>
-                      </Pressable>
+                      />
                     );
                   })}
                 </View>
@@ -1096,13 +1257,33 @@ export default function MealScreen() {
 
             <View style={styles.calendarFooter}>
               <View style={styles.calendarLegendItem}>
-                <View style={styles.legendTodayDot} />
-                <Text style={styles.calendarLegendText}>Today</Text>
+                <View
+                  style={[
+                    styles.calendarLegendStatusDot,
+                    { backgroundColor: STATUS_COLORS.tooMuch },
+                  ]}
+                />
+                <Text style={styles.calendarLegendText}>Too much</Text>
               </View>
 
               <View style={styles.calendarLegendItem}>
-                <View style={styles.legendSelectedDot} />
-                <Text style={styles.calendarLegendText}>Selected</Text>
+                <View
+                  style={[
+                    styles.calendarLegendStatusDot,
+                    { backgroundColor: STATUS_COLORS.good },
+                  ]}
+                />
+                <Text style={styles.calendarLegendText}>Good</Text>
+              </View>
+
+              <View style={styles.calendarLegendItem}>
+                <View
+                  style={[
+                    styles.calendarLegendStatusDot,
+                    { backgroundColor: STATUS_COLORS.tooLittle },
+                  ]}
+                />
+                <Text style={styles.calendarLegendText}>Too little</Text>
               </View>
             </View>
           </Pressable>
@@ -1801,12 +1982,31 @@ const styles = StyleSheet.create({
   calendarWeekRow: {
     flexDirection: 'row',
     width: '100%',
-    height: 46,
+    height: 48,
   },
 
   calendarCell: {
     flex: 1,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  calendarDateWrap: {
+    width: 42,
     height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  calendarRingSvg: {
+    position: 'absolute',
+  },
+
+  calendarRingNumber: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1850,20 +2050,33 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
+  calendarNutritionDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 1,
+  },
+
   calendarFooter: {
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingHorizontal: 20,
+    paddingHorizontal: 14,
     paddingVertical: 14,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 20,
+    gap: 14,
   },
 
   calendarLegendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
+  },
+
+  calendarLegendStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
 
   legendTodayDot: {
