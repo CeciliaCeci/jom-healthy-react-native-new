@@ -193,7 +193,7 @@ export default function HomeScreen() {
       source: 'search',
     });
   };
-
+  
   const healthInsights = [
     {
       title: t('balancedNutrition'),

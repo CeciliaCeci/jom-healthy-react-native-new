@@ -8,11 +8,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { colors } from '../theme/colors';
 import { Header, PrimaryButton, Screen, SecondaryButton } from '../components/Common';
 
-const sampleFoods = ['Nasi Lemak', 'Grilled Chicken', 'Fried Rice', 'Tom Yam Soup', 'Chicken Rice'];
-
-function mockFoodRecognition() {
-  return sampleFoods[Math.floor(Math.random() * sampleFoods.length)];
-}
 
 export default function CameraSearchScreen() {
   const navigation = useNavigation<any>();
@@ -26,14 +21,60 @@ export default function CameraSearchScreen() {
 
   const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
 
-  const detectAndNavigate = (source: 'camera' | 'gallery') => {
-    setCapturing(true);
-    setTimeout(() => {
-      const result = mockFoodRecognition();
-      setFood(result);
+  const detectAndNavigate = async (
+    imageUri: string,
+    source: 'camera' | 'gallery'
+  ) => {
+    try {
+      setCapturing(true);
+      setFood('');
+
+      const formData = new FormData();
+
+      formData.append('file', {
+        uri: imageUri,
+        name: 'food.jpg',
+        type: 'image/jpeg',
+      } as any);
+
+      const response = await fetch(
+        'https://my-food-api-53af.onrender.com/predict',
+        {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (
+        result.success &&
+        result.predictions &&
+        result.predictions.length > 0
+      ) {
+        const bestPrediction = result.predictions[0];
+
+        setFood(bestPrediction.food);
+
+        setTimeout(() => {
+          navigation.replace('FoodInfo', {
+            foodName: bestPrediction.food,
+            source: 'camera',
+            confidence: bestPrediction.confidence,
+          });
+        }, 600);
+      } else {
+        Alert.alert('Recognition Failed', 'No food detected in image.');
+      }
+    } catch (error) {
+      console.error('AI Detection Error:', error);
+      Alert.alert('Error', 'Could not connect to AI server.');
+    } finally {
       setCapturing(false);
-      setTimeout(() => navigation.replace('FoodInfo', { foodName: result, source: source === 'gallery' ? 'camera' : 'camera' }), 650);
-    }, 900);
+    }
   };
 
   const capture = async () => {
@@ -44,8 +85,10 @@ export default function CameraSearchScreen() {
     try {
       setCapturing(true);
       const photo = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
-      if (photo?.uri) setImageUri(photo.uri);
-      detectAndNavigate('camera');
+      if (photo?.uri) {
+        setImageUri(photo.uri);
+        await detectAndNavigate(photo.uri, 'camera');
+      }
     } catch (error) {
       setCapturing(false);
       Alert.alert(getText('Camera error', '相机错误', 'Ralat kamera'), String(error));
@@ -64,8 +107,9 @@ export default function CameraSearchScreen() {
       quality: 0.8,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
-      setImageUri(result.assets[0].uri);
-      detectAndNavigate('gallery');
+      const uri = result.assets[0].uri;
+      setImageUri(uri);
+      await detectAndNavigate(uri, 'gallery');
     }
   };
 
@@ -120,7 +164,6 @@ export default function CameraSearchScreen() {
           <Ionicons name="image" color="white" size={22} />
         </Pressable>
       </View>
-      <Text style={styles.note}>{getText('Current recognition is demo data. Connect your food AI API here for real image recognition.', '当前识别是演示数据。接入你的食物识别 AI API 后即可真实识别。', 'Pengecaman kini data demo. Sambungkan API AI makanan untuk pengecaman sebenar.')}</Text>
     </Screen>
   );
 }
