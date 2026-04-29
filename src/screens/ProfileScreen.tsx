@@ -1,14 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Alert,
   Image,
+  Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useChildProfile } from '../context/ChildProfileContext';
 import { useLanguage } from '../context/LanguageContext';
 import { colors } from '../theme/colors';
@@ -21,6 +29,46 @@ import {
 } from '../components/Common';
 import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
 import LanguageModal from '../components/LanguageModal';
+
+type BackupPayload = {
+  backupType: 'JOMHEALTHY_BACKUP';
+  appName: 'JomHealthy';
+  version: number;
+  exportedAt: string;
+  data: Record<string, string>;
+};
+
+const BACKUP_TYPE = 'JOMHEALTHY_BACKUP';
+const BACKUP_VERSION = 1;
+
+function createBackupFileName() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  const day = `${now.getDate()}`.padStart(2, '0');
+  const hour = `${now.getHours()}`.padStart(2, '0');
+  const minute = `${now.getMinutes()}`.padStart(2, '0');
+
+  return `JomHealthy_Backup_${year}-${month}-${day}_${hour}-${minute}.json`;
+}
+
+function getBackupDirectory() {
+  const backupDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+
+  if (!backupDir) {
+    throw new Error('File system directory is not available.');
+  }
+
+  return backupDir;
+}
+
+function normalizeBackupValue(value: any) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return JSON.stringify(value);
+}
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
@@ -36,8 +84,17 @@ export default function ProfileScreen() {
 
   const [showChildren, setShowChildren] = useState(false);
   const [showLanguage, setShowLanguage] = useState(false);
+  const [showImportGuide, setShowImportGuide] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+  const [importingData, setImportingData] = useState(false);
 
   const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
+
+  const getText = (en: string, zh: string, ms: string) => {
+    if (language === 'zh') return zh;
+    if (language === 'ms') return ms;
+    return en;
+  };
 
   const tags = [
     ...(activeChild?.allergies || []),
@@ -50,9 +107,8 @@ export default function ProfileScreen() {
   ];
 
   /**
-   * 重点：
-   * 这里不要把 activeChild 排到第一个。
-   * 保持 children 原本顺序，这样切换小孩后按钮位置不会变化。
+   * Keep children original order.
+   * After switching children, button position will not jump.
    */
   const visibleChildren = useMemo(() => {
     if (!children || children.length === 0) return [];
@@ -61,6 +117,165 @@ export default function ProfileScreen() {
 
   const handleSwitchChild = (childId: number) => {
     switchToChild(childId);
+  };
+
+  const exportAllDataToWhatsApp = async () => {
+    if (exportingData) return;
+
+    setExportingData(true);
+
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const pairs = await AsyncStorage.multiGet(keys);
+
+      const data: Record<string, string> = {};
+
+      pairs.forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          data[key] = value;
+        }
+      });
+
+      const payload: BackupPayload = {
+        backupType: BACKUP_TYPE,
+        appName: 'JomHealthy',
+        version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        data,
+      };
+
+      const fileName = createBackupFileName();
+      const fileUri = `${getBackupDirectory()}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(
+        fileUri,
+        JSON.stringify(payload, null, 2),
+        {
+          encoding: FileSystem.EncodingType.UTF8,
+        }
+      );
+
+      const sharingAvailable = await Sharing.isAvailableAsync();
+
+      if (!sharingAvailable) {
+        Alert.alert(
+          getText('Sharing unavailable', '无法分享', 'Perkongsian tidak tersedia'),
+          getText(
+            'This device does not support file sharing.',
+            '这个设备不支持文件分享。',
+            'Peranti ini tidak menyokong perkongsian fail.'
+          )
+        );
+        return;
+      }
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/json',
+        dialogTitle: getText(
+          'Send backup to WhatsApp',
+          '发送备份到 WhatsApp',
+          'Hantar sandaran ke WhatsApp'
+        ),
+        UTI: 'public.json',
+      });
+    } catch (error: any) {
+      console.log('Export backup failed:', error);
+      Alert.alert(
+        getText('Export failed', '导出失败', 'Eksport gagal'),
+        error?.message ||
+          getText(
+            'Unable to export data. Please try again.',
+            '无法导出数据，请重试。',
+            'Tidak dapat mengeksport data. Cuba lagi.'
+          )
+      );
+    } finally {
+      setExportingData(false);
+    }
+  };
+
+  const openWhatsApp = async () => {
+    try {
+      await Linking.openURL('whatsapp://app');
+    } catch (error) {
+      Alert.alert(
+        getText('Cannot open WhatsApp', '无法打开 WhatsApp', 'Tidak dapat membuka WhatsApp'),
+        getText(
+          'Please make sure WhatsApp is installed. You can also download the backup file from WhatsApp, then come back and choose it here.',
+          '请确认已安装 WhatsApp。你也可以先在 WhatsApp 下载备份文件，然后回来这里选择文件导入。',
+          'Pastikan WhatsApp telah dipasang. Anda juga boleh muat turun fail sandaran daripada WhatsApp, kemudian kembali dan pilih fail di sini.'
+        )
+      );
+    }
+  };
+
+  const importBackupFromFile = async () => {
+    if (importingData) return;
+
+    setImportingData(true);
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/json', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets?.[0];
+
+      if (!asset?.uri) {
+        throw new Error('No file selected.');
+      }
+
+      const backupText = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      const payload = JSON.parse(backupText);
+
+      if (!payload || payload.backupType !== BACKUP_TYPE || !payload.data) {
+        throw new Error('This is not a valid JomHealthy backup file.');
+      }
+
+      const entries = Object.entries(payload.data).map(([key, value]) => [
+        key,
+        normalizeBackupValue(value),
+      ]) as [string, string][];
+
+      if (entries.length === 0) {
+        throw new Error('The backup file is empty.');
+      }
+
+      await AsyncStorage.multiSet(entries);
+
+      setShowImportGuide(false);
+
+      Alert.alert(
+        getText('Import complete', '导入完成', 'Import selesai'),
+        getText(
+          'Your backup has been restored. Please restart the app if some pages do not refresh immediately.',
+          '备份已恢复。如果部分页面没有立刻刷新，请重启 App。',
+          'Sandaran anda telah dipulihkan. Sila mulakan semula app jika sesetengah halaman tidak dikemas kini serta-merta.'
+        )
+      );
+    } catch (error: any) {
+      console.log('Import backup failed:', error);
+      Alert.alert(
+        getText('Import failed', '导入失败', 'Import gagal'),
+        error?.message ||
+          getText(
+            'Unable to import data. Please choose a valid backup file.',
+            '无法导入数据，请选择有效的备份文件。',
+            'Tidak dapat mengimport data. Sila pilih fail sandaran yang sah.'
+          )
+      );
+    } finally {
+      setImportingData(false);
+    }
   };
 
   return (
@@ -193,31 +408,67 @@ export default function ProfileScreen() {
           )}
 
           <Card>
-            {[
-              [t('exportData'), 'JSON backup', 'download'],
-              [t('importData'), 'Restore backup', 'cloud-upload'],
-            ].map(([title, sub, icon]: any) => (
-              <Pressable key={title} style={styles.settingRow}>
-                <View style={styles.settingIcon}>
-                  <Ionicons
-                    name={icon}
-                    color={colors.primaryDark}
-                    size={18}
-                  />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.settingTitle}>{title}</Text>
-                  <Text style={styles.meta}>{sub}</Text>
-                </View>
-
+            <Pressable
+              style={styles.settingRow}
+              onPress={exportAllDataToWhatsApp}
+              disabled={exportingData}
+            >
+              <View style={styles.settingIcon}>
                 <Ionicons
-                  name="chevron-forward"
-                  color={colors.muted}
+                  name={exportingData ? 'hourglass-outline' : 'download'}
+                  color={colors.primaryDark}
                   size={18}
                 />
-              </Pressable>
-            ))}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingTitle}>{t('exportData')}</Text>
+                <Text style={styles.meta}>
+                  {getText(
+                    'Share JSON backup to WhatsApp',
+                    '分享到 WhatsApp 的 JSON 备份',
+                    'Kongsi sandaran JSON ke WhatsApp'
+                  )}
+                </Text>
+              </View>
+
+              <Ionicons
+                name="chevron-forward"
+                color={colors.muted}
+                size={18}
+              />
+            </Pressable>
+
+            <Pressable
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => setShowImportGuide(true)}
+              disabled={importingData}
+            >
+              <View style={styles.settingIcon}>
+                <Ionicons
+                  name={importingData ? 'hourglass-outline' : 'cloud-upload'}
+                  color={colors.primaryDark}
+                  size={18}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingTitle}>{t('importData')}</Text>
+                <Text style={styles.meta}>
+                  {getText(
+                    'Open WhatsApp, then choose backup file',
+                    '打开 WhatsApp，然后选择备份文件',
+                    'Buka WhatsApp, kemudian pilih fail sandaran'
+                  )}
+                </Text>
+              </View>
+
+              <Ionicons
+                name="chevron-forward"
+                color={colors.muted}
+                size={18}
+              />
+            </Pressable>
           </Card>
 
           <SectionTitle title="Saved Recipes" />
@@ -273,6 +524,99 @@ export default function ProfileScreen() {
           )}
         </View>
       </Screen>
+
+      <Modal
+        visible={showImportGuide}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImportGuide(false)}
+      >
+        <View style={styles.importOverlay}>
+          <View style={styles.importModal}>
+            <View style={styles.importHeader}>
+              <View style={styles.importIconBox}>
+                <Ionicons name="logo-whatsapp" size={24} color="#22C55E" />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.importTitle}>
+                  {getText('Import from WhatsApp', '从 WhatsApp 导入', 'Import dari WhatsApp')}
+                </Text>
+                <Text style={styles.importSubTitle}>
+                  {getText(
+                    'Find your backup file in WhatsApp first.',
+                    '先在 WhatsApp 找到你的备份文件。',
+                    'Cari fail sandaran anda di WhatsApp dahulu.'
+                  )}
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.importCloseButton}
+                onPress={() => setShowImportGuide(false)}
+              >
+                <Ionicons name="close" size={18} color={colors.muted} />
+              </Pressable>
+            </View>
+
+            <View style={styles.importStepBox}>
+              <Text style={styles.importStepText}>
+                {getText(
+                  '1. Tap Open WhatsApp and find the backup JSON in your chat.',
+                  '1. 点击打开 WhatsApp，在聊天里找到备份 JSON 文件。',
+                  '1. Ketik Buka WhatsApp dan cari JSON sandaran dalam chat.'
+                )}
+              </Text>
+              <Text style={styles.importStepText}>
+                {getText(
+                  '2. Download/save the file if WhatsApp asks you to.',
+                  '2. 如果 WhatsApp 提示，请先下载/保存文件。',
+                  '2. Muat turun/simpan fail jika diminta oleh WhatsApp.'
+                )}
+              </Text>
+              <Text style={styles.importStepText}>
+                {getText(
+                  '3. Come back here and tap Choose Backup File.',
+                  '3. 回到这里，点击选择备份文件。',
+                  '3. Kembali ke sini dan ketik Pilih Fail Sandaran.'
+                )}
+              </Text>
+            </View>
+
+            <Pressable style={styles.whatsAppButton} onPress={openWhatsApp}>
+              <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />
+              <Text style={styles.whatsAppButtonText}>
+                {getText('Open WhatsApp', '打开 WhatsApp', 'Buka WhatsApp')}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.chooseFileButton}
+              onPress={importBackupFromFile}
+              disabled={importingData}
+            >
+              <Ionicons
+                name={importingData ? 'hourglass-outline' : 'document-attach-outline'}
+                size={18}
+                color={colors.primaryDark}
+              />
+              <Text style={styles.chooseFileButtonText}>
+                {importingData
+                  ? getText('Importing...', '导入中...', 'Mengimport...')
+                  : getText('Choose Backup File', '选择备份文件', 'Pilih Fail Sandaran')}
+              </Text>
+            </Pressable>
+
+            <Text style={styles.importNote}>
+              {getText(
+                'For security reasons, JomHealthy cannot directly read WhatsApp chats. Please choose the backup file after saving/downloading it.',
+                '出于安全原因，JomHealthy 不能直接读取 WhatsApp 聊天。请先保存/下载备份文件后再选择导入。',
+                'Atas sebab keselamatan, JomHealthy tidak boleh membaca chat WhatsApp secara terus. Sila pilih fail sandaran selepas disimpan/dimuat turun.'
+              )}
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <ChildrenProfilesModal
         visible={showChildren}
@@ -440,6 +784,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
 
+  settingRowLast: {
+    borderBottomWidth: 0,
+  },
+
   settingIcon: {
     width: 38,
     height: 38,
@@ -534,5 +882,113 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  importOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    justifyContent: 'flex-end',
+  },
+
+  importModal: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    paddingBottom: 34,
+  },
+
+  importHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  importIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  importTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  importSubTitle: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  importCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  importStepBox: {
+    marginTop: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    padding: 14,
+    gap: 8,
+  },
+
+  importStepText: {
+    color: '#475569',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+
+  whatsAppButton: {
+    marginTop: 16,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: '#22C55E',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  whatsAppButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  chooseFileButton: {
+    marginTop: 10,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  chooseFileButtonText: {
+    color: colors.primaryDark,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  importNote: {
+    marginTop: 12,
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
   },
 });

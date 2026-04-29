@@ -49,6 +49,9 @@ type MealRecipe = {
   strArea?: string | null;
   strInstructions?: string | null;
   strMealThumb?: string | null;
+  mealIconEmoji?: string | null;
+  mealIconName?: string | null;
+  mealIconPrompt?: string | null;
   strTags?: string | null;
   strYoutube?: string | null;
   strSource?: string | null;
@@ -250,6 +253,78 @@ function isValidYoutubeUrl(url?: string | null) {
   return lower.includes('youtube.com/watch') || lower.includes('youtu.be/') || lower.includes('youtube.com/results?search_query=');
 }
 
+
+function guessMealEmoji(name?: string | null, category?: string | null) {
+  const text = `${name || ''} ${category || ''}`.toLowerCase();
+  const hasAny = (...words: string[]) => words.some((word) => text.includes(word));
+
+  // Malaysian / Asian common meals
+  if (hasAny('nasi lemak', 'coconut rice')) return '🍛';
+  if (hasAny('chicken rice', 'hainanese chicken rice', 'nasi ayam')) return '🍗';
+  if (hasAny('fried rice', 'nasi goreng', 'rice bowl', 'nasi', 'rice')) return '🍚';
+  if (hasAny('curry', 'rendang', 'laksa', 'biryani', 'briyani', 'korma', 'masala')) return '🍛';
+  if (hasAny('satay', 'skewer', 'kebab')) return '🍢';
+  if (hasAny('roti canai', 'chapati', 'naan', 'paratha', 'flatbread')) return '🫓';
+  if (hasAny('dumpling', 'gyoza', 'wonton', 'momo')) return '🥟';
+  if (hasAny('sushi', 'maki')) return '🍣';
+  if (hasAny('taco')) return '🌮';
+  if (hasAny('burrito', 'wrap')) return '🌯';
+
+  // Main dish types
+  if (hasAny('noodle', 'mee', 'mie', 'ramen', 'udon', 'vermicelli', 'bee hoon', 'bihun', 'kuey teow', 'kwetiau', 'pho')) return '🍜';
+  if (hasAny('pasta', 'spaghetti', 'macaroni', 'lasagna', 'lasagne', 'fettuccine')) return '🍝';
+  if (hasAny('soup', 'porridge', 'congee', 'broth')) return '🍲';
+  if (hasAny('stew', 'hotpot', 'claypot')) return '🥘';
+  if (hasAny('salad', 'vegetable bowl', 'greens')) return '🥗';
+  if (hasAny('sandwich', 'toast', 'bread', 'burger')) return '🥪';
+  if (hasAny('pizza')) return '🍕';
+  if (hasAny('pancake', 'waffle', 'crepe')) return '🥞';
+
+  // Protein / ingredients
+  if (hasAny('chicken', 'ayam', 'drumstick', 'wing')) return '🍗';
+  if (hasAny('fish', 'salmon', 'tuna', 'sardine', 'ikan')) return '🐟';
+  if (hasAny('shrimp', 'prawn', 'seafood', 'udang')) return '🍤';
+  if (hasAny('egg', 'omelette', 'scrambled')) return '🥚';
+  if (hasAny('beef', 'steak', 'meatball', 'lamb', 'mutton')) return '🥩';
+  if (hasAny('tofu', 'tempeh', 'bean', 'lentil', 'chickpea', 'dal', 'peas')) return '🫘';
+  if (hasAny('cheese')) return '🧀';
+  if (hasAny('milk')) return '🥛';
+  if (hasAny('yogurt', 'oat', 'granola', 'cereal', 'muesli', 'breakfast bowl')) return '🥣';
+
+  // Fruit
+  if (hasAny('banana')) return '🍌';
+  if (hasAny('apple')) return '🍎';
+  if (hasAny('orange', 'tangerine', 'mandarin')) return '🍊';
+  if (hasAny('mango')) return '🥭';
+  if (hasAny('pineapple')) return '🍍';
+  if (hasAny('watermelon')) return '🍉';
+  if (hasAny('strawberry', 'berry', 'blueberry', 'raspberry')) return '🍓';
+  if (hasAny('grape')) return '🍇';
+  if (hasAny('avocado')) return '🥑';
+  if (hasAny('fruit')) return '🍎';
+
+  // Vegetables / sides
+  if (hasAny('carrot')) return '🥕';
+  if (hasAny('corn')) return '🌽';
+  if (hasAny('potato', 'sweet potato')) return '🥔';
+  if (hasAny('broccoli')) return '🥦';
+  if (hasAny('tomato')) return '🍅';
+  if (hasAny('mushroom')) return '🍄';
+  if (hasAny('cucumber', 'pickle')) return '🥒';
+  if (hasAny('lettuce', 'spinach', 'cabbage', 'vegetable')) return '🥬';
+
+  // Snacks / drinks
+  if (hasAny('peanut', 'nut', 'almond', 'cashew')) return '🥜';
+  if (hasAny('cake', 'muffin', 'cupcake')) return '🧁';
+  if (hasAny('cookie', 'biscuit')) return '🍪';
+  if (hasAny('chocolate')) return '🍫';
+  if (hasAny('smoothie', 'juice', 'drink')) return '🥤';
+  if (hasAny('tea')) return '🍵';
+  if (hasAny('coffee')) return '☕';
+
+  return '🍽️';
+}
+
 function normalizeAiMeal(meal: any): MealRecipe {
   const rawImageUrl = meal?.strMealThumb || meal?.imageUrl || '';
   const rawYoutubeUrl = meal?.strYoutube || meal?.youtubeUrl || '';
@@ -261,6 +336,11 @@ function normalizeAiMeal(meal: any): MealRecipe {
     strArea: meal?.strArea || meal?.area || 'Healthy',
     strInstructions: meal?.strInstructions || meal?.instructions || '',
     strMealThumb: isValidImageUrl(rawImageUrl) ? rawImageUrl : null,
+    mealIconEmoji:
+      meal?.mealIconEmoji ||
+      guessMealEmoji(meal?.strMeal || meal?.name, meal?.strCategory || meal?.category),
+    mealIconName: meal?.mealIconName || '',
+    mealIconPrompt: meal?.mealIconPrompt || '',
     strYoutube: isValidYoutubeUrl(rawYoutubeUrl) ? rawYoutubeUrl : null,
     totalEnergyKcal: safeNumber(meal?.totalEnergyKcal || meal?.calories),
     totalProteinG: safeNumber(meal?.totalProteinG || meal?.protein),
@@ -676,7 +756,7 @@ export default function MealScreen() {
         {meal.strMealThumb ? (
           <Image source={{ uri: meal.strMealThumb }} style={styles.suggestionImage} />
         ) : (
-          <View style={styles.suggestionImageFallback}><Text style={styles.fallbackEmoji}>🍽️</Text></View>
+          <View style={styles.suggestionImageFallback}><Text style={styles.fallbackEmoji}>{meal.mealIconEmoji || guessMealEmoji(meal.strMeal, meal.strCategory)}</Text></View>
         )}
         <View style={styles.suggestionContent}>
           <Text style={styles.suggestionTitle} numberOfLines={2}>{meal.strMeal}</Text>
@@ -719,7 +799,7 @@ export default function MealScreen() {
         {meal.strMealThumb ? (
           <Image source={{ uri: meal.strMealThumb }} style={styles.mealImage} />
         ) : (
-          <View style={styles.mealImageFallback}><Text style={styles.fallbackEmoji}>🍽️</Text></View>
+          <View style={styles.mealImageFallback}><Text style={styles.fallbackEmoji}>{meal.mealIconEmoji || guessMealEmoji(meal.strMeal, meal.strCategory)}</Text></View>
         )}
         <View style={styles.mealContent}>
           <Text style={styles.mealTitle} numberOfLines={2}>{meal.strMeal}</Text>
