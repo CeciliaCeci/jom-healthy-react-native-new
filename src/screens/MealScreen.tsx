@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -113,6 +113,16 @@ function addDays(date: Date, offset: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + offset);
   return next;
+}
+
+function getWeekStart(date: Date) {
+  const day = date.getDay();
+  const mondayBasedOffset = (day + 6) % 7;
+  return addDays(date, -mondayBasedOffset);
+}
+
+function getScrollableDateStripDays(weekStartDate: Date) {
+  return Array.from({ length: 21 }).map((_, index) => addDays(weekStartDate, index - 7));
 }
 
 function getCenteredSevenDays(selectedDate: Date) {
@@ -450,7 +460,10 @@ export default function MealScreen() {
   const ownerKey = getOwnerKey();
   const today = useMemo(() => new Date(), []);
 
+  const dateStripRef = useRef<ScrollView>(null);
+
   const [selectedDate, setSelectedDate] = useState(today);
+  const [dateStripStart, setDateStripStart] = useState(getWeekStart(today));
   const [calendarMonth, setCalendarMonth] = useState(today);
   const [showCalendar, setShowCalendar] = useState(false);
   const [keyword, setKeyword] = useState('');
@@ -472,7 +485,7 @@ export default function MealScreen() {
     fat: nutritionNeeds?.fat || DEFAULT_TARGETS.fat,
   };
 
-  const dateTabs = useMemo(() => getCenteredSevenDays(selectedDate), [selectedDate]);
+  const dateTabs = useMemo(() => getScrollableDateStripDays(dateStripStart), [dateStripStart]);
   const calendarDays = useMemo(() => getMonthDays(calendarMonth), [calendarMonth]);
   const calendarWeeks = useMemo(() => {
     const weeks: Date[][] = [];
@@ -496,6 +509,20 @@ export default function MealScreen() {
   }, []);
 
   
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStoredMealPlans();
+    }, [loadStoredMealPlans])
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      dateStripRef.current?.scrollTo({ x: 7 * 58, animated: false });
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [dateStripStart]);
 
   useEffect(() => {
     if (lastGeneratedAt > 0) {
@@ -592,7 +619,23 @@ export default function MealScreen() {
   };
 
   const clearSelectedDayPlan = () => {
-    updateCurrentOwnerMealPlans((prev) => ({ ...prev, [selectedKey]: {} }));
+    const hasMeals = SLOT_ORDER.some((slot) => !!selectedDayPlan[slot]);
+
+    if (!hasMeals) {
+      Alert.alert('No Meals', 'There are no meals to clear for this date.');
+      return;
+    }
+
+    Alert.alert('Clear Meal Plan', 'Remove all meals for the selected date?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear All',
+        style: 'destructive',
+        onPress: () => {
+          updateCurrentOwnerMealPlans((prev) => ({ ...prev, [selectedKey]: {} }));
+        },
+      },
+    ]);
   };
 
   const openRecipeDetail = (meal: MealRecipe) => navigation.navigate('RecipeDetail', { meal });
@@ -614,6 +657,7 @@ export default function MealScreen() {
 
   const selectCalendarDate = (date: Date) => {
     setSelectedDate(date);
+    setDateStripStart(getWeekStart(date));
     setCalendarMonth(date);
     setShowCalendar(false);
   };
@@ -621,6 +665,7 @@ export default function MealScreen() {
   const goToday = () => {
     const nextToday = new Date();
     setSelectedDate(nextToday);
+    setDateStripStart(getWeekStart(nextToday));
     setCalendarMonth(nextToday);
     setShowCalendar(false);
   };
@@ -759,15 +804,25 @@ export default function MealScreen() {
           <View style={styles.dateTopRow}>
             <View>
               <Text style={styles.dateTitle}>{selectedDate.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
-              <Text style={styles.dateSubtitle}>Plan your meals for this day</Text>
+              <Text style={styles.dateSubtitle}>Swipe left or right to choose dates</Text>
             </View>
-            <Pressable style={styles.calendarButton} onPress={() => setShowCalendar(true)}>
-              <Ionicons name="calendar-outline" size={17} color={colors.primaryDark} />
-              <Text style={styles.calendarButtonText}>Calendar</Text>
-            </Pressable>
+            <View style={styles.dateActionRow}>
+              <Pressable style={styles.calendarButton} onPress={() => setShowCalendar(true)}>
+                <Ionicons name="calendar-outline" size={17} color={colors.primaryDark} />
+                <Text style={styles.calendarButtonText}>Calendar</Text>
+              </Pressable>
+            </View>
           </View>
 
-          <View style={styles.fixedDateRow}>
+          <ScrollView
+            ref={dateStripRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.scrollableDateRow}
+            decelerationRate="fast"
+            snapToInterval={58}
+            snapToAlignment="start"
+          >
             {dateTabs.map((date) => {
               const key = formatDateKey(date);
               const isSelected = key === selectedKey;
@@ -796,7 +851,7 @@ export default function MealScreen() {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
           <View style={styles.dateLegendRow}>
             <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.tooMuch }]} /><Text style={styles.dateLegendText}>Too much</Text></View>
@@ -823,6 +878,10 @@ export default function MealScreen() {
         <View style={styles.planWrapper}>
           <View style={styles.planHeaderRow}>
             <Text style={styles.planTitle}>Meal Plan</Text>
+            <Pressable style={styles.clearPlanButton} onPress={clearSelectedDayPlan}>
+              <Ionicons name="trash-outline" size={15} color="#EF4444" />
+              <Text style={styles.clearPlanButtonText}>Clear All</Text>
+            </Pressable>
           </View>
 
           <Text style={styles.planShoppingText}>☑ View ingredients in Shopping</Text>
@@ -947,10 +1006,12 @@ const styles = StyleSheet.create({
   dateTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   dateTitle: { fontSize: 16, fontWeight: '900', color: '#1F2937' },
   dateSubtitle: { marginTop: 2, fontSize: 12, color: '#94A3B8', fontWeight: '600' },
+  dateActionRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   calendarButton: { height: 36, borderRadius: 18, backgroundColor: '#EAF7F0', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
   calendarButtonText: { color: colors.primaryDark, fontWeight: '900', fontSize: 12 },
   fixedDateRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
-  dateCard: { flex: 1, minHeight: 78, borderRadius: 15, backgroundColor: '#F7F7F5', alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
+  scrollableDateRow: { gap: 6, paddingRight: 6 },
+  dateCard: { width: 52, minHeight: 78, borderRadius: 15, backgroundColor: '#F7F7F5', alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
   dateCardActive: { backgroundColor: '#57B56E' },
   dateCardSelectedWithPlan: { borderWidth: 2, borderColor: '#0F172A' },
   dateDay: { fontSize: 11, fontWeight: '800', color: '#1F3B5A' },
@@ -977,6 +1038,8 @@ const styles = StyleSheet.create({
   planWrapper: { backgroundColor: '#FFFFFF', borderRadius: 28, padding: 18, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   planHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   planTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
+  clearPlanButton: { minHeight: 34, borderRadius: 17, backgroundColor: '#FEF2F2', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  clearPlanButtonText: { color: '#EF4444', fontSize: 12, fontWeight: '900' },
   aiHint: { marginTop: 3, fontSize: 12, color: '#94A3B8', fontWeight: '700' },
   refreshButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
   refreshButtonGenerating: { backgroundColor: '#EAF7F0', borderColor: '#BBF7D0' },

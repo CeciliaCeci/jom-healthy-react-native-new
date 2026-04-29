@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, ReactNode, useContext, useMemo, useState } from 'react';
+import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -288,9 +288,11 @@ async function generateShoppingListByOwner(allMealPlans: Record<string, Record<s
 export function AiMealPlanGenerationProvider({
   children,
   onViewMeal,
+  currentRouteName,
 }: {
   children: ReactNode;
   onViewMeal?: () => void;
+  currentRouteName?: string;
 }) {
   const { activeChild, getOwnerKey, nutritionNeeds } = useChildProfile();
 
@@ -377,8 +379,13 @@ export function AiMealPlanGenerationProvider({
       await AsyncStorage.setItem(MEAL_PLANS_STORAGE_KEY, JSON.stringify(allMealPlans));
       await generateShoppingListByOwner(allMealPlans);
 
-      setReady(true);
       setLastGeneratedAt(Date.now());
+
+      if (currentRouteName === 'Meal') {
+        setReady(false);
+      } else {
+        setReady(true);
+      }
     } catch (err: any) {
       console.log('Global AI meal plan failed:', err);
       setError(err?.message || 'Network error. Please try again.');
@@ -386,6 +393,7 @@ export function AiMealPlanGenerationProvider({
       setGenerating(false);
     }
   };
+
 
   const hideFloating = () => {
     const wasReady = ready;
@@ -396,6 +404,13 @@ export function AiMealPlanGenerationProvider({
       onViewMeal?.();
     }
   };
+
+  useEffect(() => {
+    if (ready && currentRouteName === 'Meal') {
+      setReady(false);
+      setError('');
+    }
+  }, [ready, currentRouteName]);
 
   const value = useMemo(
     () => ({

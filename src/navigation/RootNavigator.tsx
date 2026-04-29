@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -62,9 +62,16 @@ function MainTabs() {
 }
 
 export default function RootNavigator() {
+  const [currentRouteName, setCurrentRouteName] = useState<string | undefined>();
+
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => setCurrentRouteName(navigationRef.getCurrentRoute()?.name)}
+      onStateChange={() => setCurrentRouteName(navigationRef.getCurrentRoute()?.name)}
+    >
       <AiMealPlanGenerationProvider
+        currentRouteName={currentRouteName}
         onViewMeal={() => {
           if (navigationRef.isReady()) {
             navigationRef.navigate('MainTabs', { screen: 'Meal' });
