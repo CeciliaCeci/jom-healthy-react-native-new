@@ -21,6 +21,7 @@ import { colors } from '../theme/colors';
 import { searchMeals } from '../services/api';
 import { useChildProfile } from '../context/ChildProfileContext';
 import { useAiMealPlanGeneration } from '../context/AiMealPlanGenerationContext';
+import { useLanguage } from '../context/LanguageContext';
 
 type Ingredient = {
   ingredientId?: number;
@@ -253,74 +254,45 @@ function isValidYoutubeUrl(url?: string | null) {
   return lower.includes('youtube.com/watch') || lower.includes('youtu.be/') || lower.includes('youtube.com/results?search_query=');
 }
 
-
 function guessMealEmoji(name?: string | null, category?: string | null) {
   const text = `${name || ''} ${category || ''}`.toLowerCase();
-  const hasAny = (...words: string[]) => words.some((word) => text.includes(word));
 
-  // Malaysian / Asian common meals
-  if (hasAny('nasi lemak', 'coconut rice')) return '🍛';
-  if (hasAny('chicken rice', 'hainanese chicken rice', 'nasi ayam')) return '🍗';
-  if (hasAny('fried rice', 'nasi goreng', 'rice bowl', 'nasi', 'rice')) return '🍚';
-  if (hasAny('curry', 'rendang', 'laksa', 'biryani', 'briyani', 'korma', 'masala')) return '🍛';
-  if (hasAny('satay', 'skewer', 'kebab')) return '🍢';
-  if (hasAny('roti canai', 'chapati', 'naan', 'paratha', 'flatbread')) return '🫓';
-  if (hasAny('dumpling', 'gyoza', 'wonton', 'momo')) return '🥟';
-  if (hasAny('sushi', 'maki')) return '🍣';
-  if (hasAny('taco')) return '🌮';
-  if (hasAny('burrito', 'wrap')) return '🌯';
-
-  // Main dish types
-  if (hasAny('noodle', 'mee', 'mie', 'ramen', 'udon', 'vermicelli', 'bee hoon', 'bihun', 'kuey teow', 'kwetiau', 'pho')) return '🍜';
-  if (hasAny('pasta', 'spaghetti', 'macaroni', 'lasagna', 'lasagne', 'fettuccine')) return '🍝';
-  if (hasAny('soup', 'porridge', 'congee', 'broth')) return '🍲';
-  if (hasAny('stew', 'hotpot', 'claypot')) return '🥘';
-  if (hasAny('salad', 'vegetable bowl', 'greens')) return '🥗';
-  if (hasAny('sandwich', 'toast', 'bread', 'burger')) return '🥪';
-  if (hasAny('pizza')) return '🍕';
-  if (hasAny('pancake', 'waffle', 'crepe')) return '🥞';
-
-  // Protein / ingredients
-  if (hasAny('chicken', 'ayam', 'drumstick', 'wing')) return '🍗';
-  if (hasAny('fish', 'salmon', 'tuna', 'sardine', 'ikan')) return '🐟';
-  if (hasAny('shrimp', 'prawn', 'seafood', 'udang')) return '🍤';
-  if (hasAny('egg', 'omelette', 'scrambled')) return '🥚';
-  if (hasAny('beef', 'steak', 'meatball', 'lamb', 'mutton')) return '🥩';
-  if (hasAny('tofu', 'tempeh', 'bean', 'lentil', 'chickpea', 'dal', 'peas')) return '🫘';
-  if (hasAny('cheese')) return '🧀';
-  if (hasAny('milk')) return '🥛';
-  if (hasAny('yogurt', 'oat', 'granola', 'cereal', 'muesli', 'breakfast bowl')) return '🥣';
-
-  // Fruit
-  if (hasAny('banana')) return '🍌';
-  if (hasAny('apple')) return '🍎';
-  if (hasAny('orange', 'tangerine', 'mandarin')) return '🍊';
-  if (hasAny('mango')) return '🥭';
-  if (hasAny('pineapple')) return '🍍';
-  if (hasAny('watermelon')) return '🍉';
-  if (hasAny('strawberry', 'berry', 'blueberry', 'raspberry')) return '🍓';
-  if (hasAny('grape')) return '🍇';
-  if (hasAny('avocado')) return '🥑';
-  if (hasAny('fruit')) return '🍎';
-
-  // Vegetables / sides
-  if (hasAny('carrot')) return '🥕';
-  if (hasAny('corn')) return '🌽';
-  if (hasAny('potato', 'sweet potato')) return '🥔';
-  if (hasAny('broccoli')) return '🥦';
-  if (hasAny('tomato')) return '🍅';
-  if (hasAny('mushroom')) return '🍄';
-  if (hasAny('cucumber', 'pickle')) return '🥒';
-  if (hasAny('lettuce', 'spinach', 'cabbage', 'vegetable')) return '🥬';
-
-  // Snacks / drinks
-  if (hasAny('peanut', 'nut', 'almond', 'cashew')) return '🥜';
-  if (hasAny('cake', 'muffin', 'cupcake')) return '🧁';
-  if (hasAny('cookie', 'biscuit')) return '🍪';
-  if (hasAny('chocolate')) return '🍫';
-  if (hasAny('smoothie', 'juice', 'drink')) return '🥤';
-  if (hasAny('tea')) return '🍵';
-  if (hasAny('coffee')) return '☕';
+  if (text.includes('nasi lemak')) return '🍛';
+  if (text.includes('fried rice')) return '🍛';
+  if (text.includes('rice') || text.includes('nasi') || text.includes('biryani') || text.includes('porridge') || text.includes('congee')) return '🍚';
+  if (text.includes('noodle') || text.includes('mee') || text.includes('laksa') || text.includes('ramen') || text.includes('udon') || text.includes('pasta') || text.includes('spaghetti')) return '🍜';
+  if (text.includes('soup') || text.includes('stew') || text.includes('broth')) return '🍲';
+  if (text.includes('salad') || text.includes('vegetable') || text.includes('veggie')) return '🥗';
+  if (text.includes('sandwich') || text.includes('burger') || text.includes('toast')) return '🥪';
+  if (text.includes('bread') || text.includes('roti') || text.includes('bun')) return '🍞';
+  if (text.includes('pizza')) return '🍕';
+  if (text.includes('taco') || text.includes('wrap')) return '🌮';
+  if (text.includes('chicken') || text.includes('ayam')) return '🍗';
+  if (text.includes('beef') || text.includes('steak')) return '🥩';
+  if (text.includes('fish') || text.includes('salmon') || text.includes('tuna')) return '🐟';
+  if (text.includes('shrimp') || text.includes('prawn') || text.includes('seafood')) return '🦐';
+  if (text.includes('egg') || text.includes('omelette') || text.includes('omelet')) return '🥚';
+  if (text.includes('tofu') || text.includes('bean') || text.includes('lentil')) return '🫘';
+  if (text.includes('curry')) return '🍛';
+  if (text.includes('satay')) return '🍢';
+  if (text.includes('sushi')) return '🍣';
+  if (text.includes('dumpling')) return '🥟';
+  if (text.includes('potato') || text.includes('fries')) return '🥔';
+  if (text.includes('corn')) return '🌽';
+  if (text.includes('carrot')) return '🥕';
+  if (text.includes('broccoli')) return '🥦';
+  if (text.includes('tomato')) return '🍅';
+  if (text.includes('avocado')) return '🥑';
+  if (text.includes('banana')) return '🍌';
+  if (text.includes('apple')) return '🍎';
+  if (text.includes('orange')) return '🍊';
+  if (text.includes('mango')) return '🥭';
+  if (text.includes('strawberry') || text.includes('berry')) return '🍓';
+  if (text.includes('fruit')) return '🍎';
+  if (text.includes('yogurt') || text.includes('oat') || text.includes('cereal') || text.includes('granola')) return '🥣';
+  if (text.includes('milk') || text.includes('smoothie')) return '🥛';
+  if (text.includes('juice')) return '🧃';
+  if (text.includes('snack')) return '🍪';
 
   return '🍽️';
 }
@@ -336,11 +308,9 @@ function normalizeAiMeal(meal: any): MealRecipe {
     strArea: meal?.strArea || meal?.area || 'Healthy',
     strInstructions: meal?.strInstructions || meal?.instructions || '',
     strMealThumb: isValidImageUrl(rawImageUrl) ? rawImageUrl : null,
-    mealIconEmoji:
-      meal?.mealIconEmoji ||
-      guessMealEmoji(meal?.strMeal || meal?.name, meal?.strCategory || meal?.category),
-    mealIconName: meal?.mealIconName || '',
-    mealIconPrompt: meal?.mealIconPrompt || '',
+    mealIconEmoji: meal?.mealIconEmoji || guessMealEmoji(meal?.strMeal || meal?.name, meal?.strCategory || meal?.category),
+    mealIconName: meal?.mealIconName || null,
+    mealIconPrompt: meal?.mealIconPrompt || null,
     strYoutube: isValidYoutubeUrl(rawYoutubeUrl) ? rawYoutubeUrl : null,
     totalEnergyKcal: safeNumber(meal?.totalEnergyKcal || meal?.calories),
     totalProteinG: safeNumber(meal?.totalProteinG || meal?.protein),
@@ -535,10 +505,28 @@ function CalendarDateCell({
 
 export default function MealScreen() {
   const navigation = useNavigation<any>();
+  const { language } = useLanguage();
   const { openAiMealPlanModal, isGeneratingMealPlan, lastGeneratedAt } = useAiMealPlanGeneration();
   const { activeChild, getOwnerKey, nutritionNeeds } = useChildProfile();
   const ownerKey = getOwnerKey();
   const today = useMemo(() => new Date(), []);
+  const locale = language === 'zh' ? 'zh-CN' : language === 'ms' ? 'ms-MY' : 'en-US';
+
+  const getText = (en: string, zh: string, ms: string) => {
+    if (language === 'zh') return zh;
+    if (language === 'ms') return ms;
+    return en;
+  };
+
+  const getSlotLabel = (slot: MealSlotKey) => {
+    const labels: Record<MealSlotKey, string> = {
+      Breakfast: getText('Breakfast', '早餐', 'Sarapan'),
+      Lunch: getText('Lunch', '午餐', 'Makan Tengah Hari'),
+      Dinner: getText('Dinner', '晚餐', 'Makan Malam'),
+      Snack: getText('Snack', '加餐', 'Snek'),
+    };
+    return labels[slot];
+  };
 
   const dateStripRef = useRef<ScrollView>(null);
 
@@ -666,12 +654,12 @@ export default function MealScreen() {
       const current = prev[selectedKey] || {};
       const existingMealIds = SLOT_ORDER.map((slot) => current[slot]?.idMeal).filter(Boolean);
       if (existingMealIds.includes(meal.idMeal)) {
-        Alert.alert('Already Added', 'This recipe is already in your meal plan.');
+        Alert.alert(getText('Already Added', '已添加', 'Sudah Ditambah'), getText('This recipe is already in your meal plan.', '这个食谱已经在你的膳食计划里。', 'Resipi ini sudah ada dalam pelan makanan anda.'));
         return prev;
       }
       const emptySlot = SLOT_ORDER.find((slot) => !current[slot]);
       if (!emptySlot) {
-        Alert.alert('Meal Plan Full', 'You already have 4 meals for this day.');
+        Alert.alert(getText('Meal Plan Full', '膳食计划已满', 'Pelan Makanan Penuh'), getText('You already have 4 meals for this day.', '这一天已经有 4 餐了。', 'Anda sudah mempunyai 4 hidangan untuk hari ini.'));
         return prev;
       }
       return { ...prev, [selectedKey]: { ...current, [emptySlot]: meal } };
@@ -702,14 +690,14 @@ export default function MealScreen() {
     const hasMeals = SLOT_ORDER.some((slot) => !!selectedDayPlan[slot]);
 
     if (!hasMeals) {
-      Alert.alert('No Meals', 'There are no meals to clear for this date.');
+      Alert.alert(getText('No Meals', '没有餐食', 'Tiada Hidangan'), getText('There are no meals to clear for this date.', '这个日期没有可以清空的餐食。', 'Tiada hidangan untuk dikosongkan pada tarikh ini.'));
       return;
     }
 
-    Alert.alert('Clear Meal Plan', 'Remove all meals for the selected date?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(getText('Clear Meal Plan', '清空膳食计划', 'Kosongkan Pelan Makanan'), getText('Remove all meals for the selected date?', '要删除所选日期的所有餐食吗？', 'Buang semua hidangan untuk tarikh yang dipilih?'), [
+      { text: getText('Cancel', '取消', 'Batal'), style: 'cancel' },
       {
-        text: 'Clear All',
+        text: getText('Clear All', '全部清空', 'Kosongkan Semua'),
         style: 'destructive',
         onPress: () => {
           updateCurrentOwnerMealPlans((prev) => ({ ...prev, [selectedKey]: {} }));
@@ -722,16 +710,16 @@ export default function MealScreen() {
 
   const openYoutube = async (url?: string | null) => {
     if (!url) {
-      Alert.alert('No Tutorial', 'This recipe does not have a tutorial link.');
+      Alert.alert(getText('No Tutorial', '没有教程', 'Tiada Tutorial'), getText('This recipe does not have a tutorial link.', '这个食谱没有教程链接。', 'Resipi ini tiada pautan tutorial.'));
       return;
     }
     try {
       const supported = await Linking.canOpenURL(url);
       if (supported) await Linking.openURL(url);
-      else Alert.alert('Cannot Open Link', 'Unable to open the tutorial link.');
+      else Alert.alert(getText('Cannot Open Link', '无法打开链接', 'Tidak Dapat Buka Pautan'), getText('Unable to open the tutorial link.', '无法打开教程链接。', 'Tidak dapat membuka pautan tutorial.'));
     } catch (error) {
       console.log('Open tutorial failed:', error);
-      Alert.alert('Error', 'Unable to open the tutorial link.');
+      Alert.alert(getText('Error', '错误', 'Ralat'), getText('Unable to open the tutorial link.', '无法打开教程链接。', 'Tidak dapat membuka pautan tutorial.'));
     }
   };
 
@@ -760,24 +748,24 @@ export default function MealScreen() {
         )}
         <View style={styles.suggestionContent}>
           <Text style={styles.suggestionTitle} numberOfLines={2}>{meal.strMeal}</Text>
-          <Text style={styles.suggestionMeta}>{meal.strCategory || 'Recipe'} · {meal.strArea || 'Meal'}</Text>
+          <Text style={styles.suggestionMeta}>{meal.strCategory || getText('Recipe', '食谱', 'Resipi')} · {meal.strArea || getText('Meal', '餐食', 'Hidangan')}</Text>
           <Text style={styles.suggestionNutrition}>
-            {round(meal.totalEnergyKcal)} kcal · P {round(meal.totalProteinG)}g · C {round(meal.totalCarbohydrateG)}g · F {round(meal.totalFatG)}g
+            {round(meal.totalEnergyKcal)} kcal · {getText('Protein', '蛋白质', 'Protein')} {round(meal.totalProteinG)}g · {getText('Carbs', '碳水', 'Karbo')} {round(meal.totalCarbohydrateG)}g · {getText('Fat', '脂肪', 'Lemak')} {round(meal.totalFatG)}g
           </Text>
         </View>
       </Pressable>
       <View style={styles.suggestionActions}>
         <Pressable style={[styles.suggestionButton, styles.suggestionViewButton]} onPress={() => openRecipeDetail(meal)}>
           <Ionicons name="book-outline" size={15} color="#3BA76D" />
-          <Text style={[styles.suggestionButtonText, { color: '#3BA76D' }]}>View</Text>
+          <Text style={[styles.suggestionButtonText, { color: '#3BA76D' }]}>{getText('View', '查看', 'Lihat')}</Text>
         </Pressable>
         <Pressable style={[styles.suggestionButton, styles.suggestionWatchButton]} onPress={() => openYoutube(meal.strYoutube)}>
           <Ionicons name="logo-youtube" size={15} color="#FF3B30" />
-          <Text style={[styles.suggestionButtonText, { color: '#FF3B30' }]}>Watch</Text>
+          <Text style={[styles.suggestionButtonText, { color: '#FF3B30' }]}>{getText('Watch', '观看', 'Tonton')}</Text>
         </Pressable>
         <Pressable style={styles.suggestionAddButton} onPress={() => addMealToPlan(meal)}>
           <Ionicons name="add" size={16} color="#FFFFFF" />
-          <Text style={styles.suggestionAddText}>Add</Text>
+          <Text style={styles.suggestionAddText}>{getText('Add', '添加', 'Tambah')}</Text>
         </Pressable>
       </View>
     </View>
@@ -787,8 +775,8 @@ export default function MealScreen() {
     <View key={`${slot}-${meal.idMeal}`} style={styles.mealSection}>
       <View style={styles.mealSectionHeader}>
         <View>
-          <Text style={styles.mealSectionTitle}>{slot}</Text>
-          <Text style={styles.mealSectionSub}>1 meal</Text>
+          <Text style={styles.mealSectionTitle}>{getSlotLabel(slot)}</Text>
+          <Text style={styles.mealSectionSub}>{getText('1 meal', '1 餐', '1 hidangan')}</Text>
         </View>
         <Pressable style={styles.smallIconButton} onPress={() => deleteMealFromPlan(slot)}>
           <Ionicons name="trash-outline" size={18} color="#EF4444" />
@@ -804,18 +792,18 @@ export default function MealScreen() {
         <View style={styles.mealContent}>
           <Text style={styles.mealTitle} numberOfLines={2}>{meal.strMeal}</Text>
           <View style={styles.macroTagRow}>
-            <View style={[styles.macroTag, styles.macroCarb]}><Text style={[styles.macroTagText, { color: '#F97316' }]}>{round(meal.totalCarbohydrateG)}g carbs</Text></View>
-            <View style={[styles.macroTag, styles.macroProtein]}><Text style={[styles.macroTagText, { color: '#2563EB' }]}>{round(meal.totalProteinG)}g protein</Text></View>
-            <View style={[styles.macroTag, styles.macroFat]}><Text style={[styles.macroTagText, { color: '#16A34A' }]}>{round(meal.totalFatG)}g fat</Text></View>
+            <View style={[styles.macroTag, styles.macroCarb]}><Text style={[styles.macroTagText, { color: '#F97316' }]}>{round(meal.totalCarbohydrateG)}g {getText('carbs', '碳水', 'karbo')}</Text></View>
+            <View style={[styles.macroTag, styles.macroProtein]}><Text style={[styles.macroTagText, { color: '#2563EB' }]}>{round(meal.totalProteinG)}g {getText('protein', '蛋白质', 'protein')}</Text></View>
+            <View style={[styles.macroTag, styles.macroFat]}><Text style={[styles.macroTagText, { color: '#16A34A' }]}>{round(meal.totalFatG)}g {getText('fat', '脂肪', 'lemak')}</Text></View>
           </View>
           <View style={styles.mealButtonRow}>
             <Pressable style={[styles.actionButton, styles.viewButton]} onPress={() => openRecipeDetail(meal)}>
               <Ionicons name="book-outline" size={16} color="#3BA76D" />
-              <Text style={[styles.actionButtonText, { color: '#3BA76D' }]}>View Recipe</Text>
+              <Text style={[styles.actionButtonText, { color: '#3BA76D' }]}>{getText('View Recipe', '查看食谱', 'Lihat Resipi')}</Text>
             </Pressable>
             <Pressable style={[styles.actionButton, styles.watchButton]} onPress={() => openYoutube(meal.strYoutube)}>
               <Ionicons name="logo-youtube" size={16} color="#FF3B30" />
-              <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>Watch Tutorial</Text>
+              <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>{getText('Watch Tutorial', '观看教程', 'Tonton Tutorial')}</Text>
             </Pressable>
           </View>
           {suggestions.length > 0 && (
@@ -824,11 +812,11 @@ export default function MealScreen() {
               onPress={() => {
                 const candidate = suggestions.find((item) => item.idMeal !== meal.idMeal);
                 if (candidate) replaceMealInSlot(slot, candidate);
-                else Alert.alert('No Alternative', 'Search another recipe to replace this one.');
+                else Alert.alert(getText('No Alternative', '没有替代食谱', 'Tiada Alternatif'), getText('Search another recipe to replace this one.', '请搜索另一个食谱来替换。', 'Cari resipi lain untuk menggantikannya.'));
               }}
             >
               <Ionicons name="swap-horizontal" size={16} color={colors.primaryDark} />
-              <Text style={styles.replaceLinkText}>Replace meal</Text>
+              <Text style={styles.replaceLinkText}>{getText('Replace meal', '替换餐食', 'Ganti Hidangan')}</Text>
             </Pressable>
           )}
         </View>
@@ -838,7 +826,7 @@ export default function MealScreen() {
 
   return (
     <Screen padded={false}>
-      <Header title="Meal Plan" subtitle={activeChild ? `${activeChild.nickname}'s meal plan` : 'Guest meal plan'} icon="restaurant" />
+      <Header title={getText('Meal Plan', '膳食计划', 'Pelan Makanan')} subtitle={activeChild ? `${activeChild.nickname}${getText("'s meal plan", '的膳食计划', ' punya pelan makanan')}` : getText('Guest meal plan', '访客膳食计划', 'Pelan makanan tetamu')} icon="restaurant" />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.searchOuterCard}>
@@ -847,7 +835,7 @@ export default function MealScreen() {
             <TextInput
               value={keyword}
               onChangeText={(text) => { setKeyword(text); setShowSuggestions(true); }}
-              placeholder="Search recipes..."
+              placeholder={getText('Search recipes...', '搜索食谱...', 'Cari resipi...')}
               placeholderTextColor="#9CA3AF"
               style={styles.searchInput}
               returnKeyType="search"
@@ -864,7 +852,7 @@ export default function MealScreen() {
               {searchLoading ? (
                 <View style={styles.suggestionStatus}>
                   <ActivityIndicator size="small" color={colors.primaryDark} />
-                  <Text style={styles.suggestionStatusText}>Searching recipes...</Text>
+                  <Text style={styles.suggestionStatusText}>{getText('Searching recipes...', '正在搜索食谱...', 'Mencari resipi...')}</Text>
                 </View>
               ) : searchError ? (
                 <View style={styles.suggestionStatus}>
@@ -874,7 +862,7 @@ export default function MealScreen() {
               ) : suggestions.length > 0 ? (
                 suggestions.map(renderSuggestion)
               ) : (
-                <View style={styles.suggestionStatus}><Text style={styles.suggestionStatusText}>No matching recipes found</Text></View>
+                <View style={styles.suggestionStatus}><Text style={styles.suggestionStatusText}>{getText('No matching recipes found', '没有找到匹配的食谱', 'Tiada resipi sepadan ditemui')}</Text></View>
               )}
             </View>
           )}
@@ -883,13 +871,13 @@ export default function MealScreen() {
         <View style={styles.dateContainer}>
           <View style={styles.dateTopRow}>
             <View>
-              <Text style={styles.dateTitle}>{selectedDate.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
-              <Text style={styles.dateSubtitle}>Swipe left or right to choose dates</Text>
+              <Text style={styles.dateTitle}>{selectedDate.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
+              <Text style={styles.dateSubtitle}>{getText('Swipe left or right to choose dates', '左右滑动选择日期', 'Leret kiri atau kanan untuk pilih tarikh')}</Text>
             </View>
             <View style={styles.dateActionRow}>
               <Pressable style={styles.calendarButton} onPress={() => setShowCalendar(true)}>
                 <Ionicons name="calendar-outline" size={17} color={colors.primaryDark} />
-                <Text style={styles.calendarButtonText}>Calendar</Text>
+                <Text style={styles.calendarButtonText}>{getText('Calendar', '日历', 'Kalendar')}</Text>
               </Pressable>
             </View>
           </View>
@@ -924,65 +912,65 @@ export default function MealScreen() {
                   onPress={() => setSelectedDate(date)}
                 >
                   <Text style={[styles.dateDay, activeText && styles.dateTextActive]}>
-                    {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                    {date.toLocaleDateString(locale, { weekday: 'short' })}
                   </Text>
                   <Text style={[styles.dateNumber, activeText && styles.dateTextActive]}>{date.getDate()}</Text>
-                  {isToday && <Text style={[styles.dateToday, activeText && styles.dateTodayActive]}>Today</Text>}
+                  {isToday && <Text style={[styles.dateToday, activeText && styles.dateTodayActive]}>{getText('Today', '今天', 'Hari Ini')}</Text>}
                 </Pressable>
               );
             })}
           </ScrollView>
 
           <View style={styles.dateLegendRow}>
-            <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.tooMuch }]} /><Text style={styles.dateLegendText}>Too much</Text></View>
-            <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.good }]} /><Text style={styles.dateLegendText}>Good</Text></View>
-            <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.tooLittle }]} /><Text style={styles.dateLegendText}>Too little</Text></View>
+            <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.tooMuch }]} /><Text style={styles.dateLegendText}>{getText('Too much', '吃多了', 'Terlalu Banyak')}</Text></View>
+            <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.good }]} /><Text style={styles.dateLegendText}>{getText('Good', '正常', 'Baik')}</Text></View>
+            <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.tooLittle }]} /><Text style={styles.dateLegendText}>{getText('Too little', '吃少了', 'Terlalu Sedikit')}</Text></View>
           </View>
         </View>
 
         <View style={styles.nutritionCard}>
           <View style={styles.nutritionHeaderRow}>
             <View>
-              <Text style={styles.nutritionTitle}>Today's Nutrition</Text>
-              <Text style={styles.nutritionSubtitle}>{activeChild ? 'Targets loaded from child profile' : 'Guest default targets'}</Text>
+              <Text style={styles.nutritionTitle}>{getText("Today's Nutrition", '今日营养', 'Nutrisi Hari Ini')}</Text>
+              <Text style={styles.nutritionSubtitle}>{activeChild ? getText('Targets loaded from child profile', '目标来自儿童档案', 'Sasaran daripada profil kanak-kanak') : getText('Guest default targets', '访客默认目标', 'Sasaran lalai tetamu')}</Text>
             </View>
-            <Text style={styles.nutritionProgressText}>Progress</Text>
+            <Text style={styles.nutritionProgressText}>{getText('Progress', '进度', 'Kemajuan')}</Text>
           </View>
           <View style={styles.ringRow}>
-            <NutritionRing label="Carbs" value={totals.carbs} target={currentTargets.carbs} color="#F39B5F" />
-            <NutritionRing label="Protein" value={totals.protein} target={currentTargets.protein} color="#72C3E6" />
-            <NutritionRing label="Fat" value={totals.fat} target={currentTargets.fat} color="#56B277" />
+            <NutritionRing label={getText('Carbs', '碳水', 'Karbo')} value={totals.carbs} target={currentTargets.carbs} color="#F39B5F" />
+            <NutritionRing label={getText('Protein', '蛋白质', 'Protein')} value={totals.protein} target={currentTargets.protein} color="#72C3E6" />
+            <NutritionRing label={getText('Fat', '脂肪', 'Lemak')} value={totals.fat} target={currentTargets.fat} color="#56B277" />
           </View>
         </View>
 
         <View style={styles.planWrapper}>
           <View style={styles.planHeaderRow}>
-            <Text style={styles.planTitle}>Meal Plan</Text>
+            <Text style={styles.planTitle}>{getText('Meal Plan', '膳食计划', 'Pelan Makanan')}</Text>
             <Pressable style={styles.clearPlanButton} onPress={clearSelectedDayPlan}>
               <Ionicons name="trash-outline" size={15} color="#EF4444" />
-              <Text style={styles.clearPlanButtonText}>Clear All</Text>
+              <Text style={styles.clearPlanButtonText}>{getText('Clear All', '全部清空', 'Kosongkan Semua')}</Text>
             </Pressable>
           </View>
 
-          <Text style={styles.planShoppingText}>☑ View ingredients in Shopping</Text>
-          <View style={styles.preferenceBanner}><Text style={styles.preferenceBannerText}>✓ Meals adapted to preferences:</Text></View>
+          <Text style={styles.planShoppingText}>☑ {getText('View ingredients in Shopping', '在购物清单查看食材', 'Lihat bahan di Shopping')}</Text>
+          <View style={styles.preferenceBanner}><Text style={styles.preferenceBannerText}>✓ {getText('Meals adapted to preferences', '餐食已根据偏好调整', 'Hidangan disesuaikan dengan pilihan')}</Text></View>
 
           {isGeneratingMealPlan ? (
             <View style={styles.generatingCard}>
               <ActivityIndicator size="large" color={colors.primaryDark} />
-              <Text style={styles.generatingTitle}>Generating your meal plan...</Text>
-              <Text style={styles.generatingText}>AI is choosing suitable recipes based on the child profile, nutrition targets and your food preference.</Text>
+              <Text style={styles.generatingTitle}>{getText('Generating your meal plan...', '正在生成你的膳食计划...', 'Sedang menjana pelan makanan anda...')}</Text>
+              <Text style={styles.generatingText}>{getText('AI is choosing suitable recipes based on the child profile, nutrition targets and your food preference.', 'AI 正在根据儿童档案、营养目标和食物偏好选择合适的食谱。', 'AI sedang memilih resipi yang sesuai berdasarkan profil kanak-kanak, sasaran nutrisi dan pilihan makanan anda.')}</Text>
             </View>
           ) : SLOT_ORDER.some((slot) => !!selectedDayPlan[slot]) ? (
             SLOT_ORDER.filter((slot) => !!selectedDayPlan[slot]).map((slot) => renderMealCard(slot, selectedDayPlan[slot] as MealRecipe))
           ) : (
             <View style={styles.emptyMealPlanCard}>
               <Text style={styles.emptyMealPlanEmoji}>🍽️</Text>
-              <Text style={styles.emptyMealPlanTitle}>No meals added yet</Text>
-              <Text style={styles.emptyMealPlanText}>Tap the button below to generate an AI meal plan, or search recipes above.</Text>
+              <Text style={styles.emptyMealPlanTitle}>{getText('No meals added yet', '还没有添加餐食', 'Belum ada hidangan')}</Text>
+              <Text style={styles.emptyMealPlanText}>{getText('Tap the button below to generate an AI meal plan, or search recipes above.', '点击下面按钮生成 AI 膳食计划，或在上方搜索食谱。', 'Ketik butang di bawah untuk menjana pelan makanan AI, atau cari resipi di atas.')}</Text>
               <Pressable style={styles.generatePlanButton} onPress={() => openAiMealPlanModal({ startDate: selectedDate })}>
                 <Ionicons name="sparkles" size={17} color="#FFFFFF" />
-                <Text style={styles.generatePlanButtonText}>Generate Meal Plan</Text>
+                <Text style={styles.generatePlanButtonText}>{getText('Generate Meal Plan', '生成膳食计划', 'Jana Pelan Makanan')}</Text>
               </Pressable>
             </View>
           )}
@@ -994,8 +982,8 @@ export default function MealScreen() {
           <Pressable style={styles.calendarModal} onPress={() => {}}>
             <View style={styles.calendarHero}>
               <View>
-                <Text style={styles.calendarHeroLabel}>Select date</Text>
-                <Text style={styles.calendarHeroTitle}>{calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text>
+                <Text style={styles.calendarHeroLabel}>{getText('Select date', '选择日期', 'Pilih tarikh')}</Text>
+                <Text style={styles.calendarHeroTitle}>{calendarMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</Text>
               </View>
               <Pressable style={styles.calendarCloseButton} onPress={() => setShowCalendar(false)}>
                 <Ionicons name="close" size={20} color="#FFFFFF" />
@@ -1008,7 +996,7 @@ export default function MealScreen() {
               </Pressable>
               <Pressable style={styles.calendarTodayButton} onPress={goToday}>
                 <Ionicons name="sunny-outline" size={16} color={colors.primaryDark} />
-                <Text style={styles.calendarTodayText}>Today</Text>
+                <Text style={styles.calendarTodayText}>{getText('Today', '今天', 'Hari Ini')}</Text>
               </Pressable>
               <Pressable style={styles.calendarNavButton} onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>
                 <Ionicons name="chevron-forward" size={22} color={colors.primaryDark} />
@@ -1016,7 +1004,7 @@ export default function MealScreen() {
             </View>
 
             <View style={styles.weekRow}>
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <Text key={day} style={styles.weekText}>{day}</Text>)}
+              {[getText('Mon', '周一', 'Isn'), getText('Tue', '周二', 'Sel'), getText('Wed', '周三', 'Rab'), getText('Thu', '周四', 'Kha'), getText('Fri', '周五', 'Jum'), getText('Sat', '周六', 'Sab'), getText('Sun', '周日', 'Aha')].map((day) => <Text key={day} style={styles.weekText}>{day}</Text>)}
             </View>
 
             <View style={styles.calendarGrid}>
@@ -1046,9 +1034,9 @@ export default function MealScreen() {
             </View>
 
             <View style={styles.calendarFooter}>
-              <View style={styles.calendarLegendItem}><View style={[styles.calendarLegendStatusDot, { backgroundColor: STATUS_COLORS.tooMuch }]} /><Text style={styles.calendarLegendText}>Too much</Text></View>
-              <View style={styles.calendarLegendItem}><View style={[styles.calendarLegendStatusDot, { backgroundColor: STATUS_COLORS.good }]} /><Text style={styles.calendarLegendText}>Good</Text></View>
-              <View style={styles.calendarLegendItem}><View style={[styles.calendarLegendStatusDot, { backgroundColor: STATUS_COLORS.tooLittle }]} /><Text style={styles.calendarLegendText}>Too little</Text></View>
+              <View style={styles.calendarLegendItem}><View style={[styles.calendarLegendStatusDot, { backgroundColor: STATUS_COLORS.tooMuch }]} /><Text style={styles.calendarLegendText}>{getText('Too much', '吃多了', 'Terlalu Banyak')}</Text></View>
+              <View style={styles.calendarLegendItem}><View style={[styles.calendarLegendStatusDot, { backgroundColor: STATUS_COLORS.good }]} /><Text style={styles.calendarLegendText}>{getText('Good', '正常', 'Baik')}</Text></View>
+              <View style={styles.calendarLegendItem}><View style={[styles.calendarLegendStatusDot, { backgroundColor: STATUS_COLORS.tooLittle }]} /><Text style={styles.calendarLegendText}>{getText('Too little', '吃少了', 'Terlalu Sedikit')}</Text></View>
             </View>
           </Pressable>
         </Pressable>
