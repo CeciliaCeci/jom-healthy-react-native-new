@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,9 +15,11 @@ import RecipeDetailScreen from '../screens/RecipeDetailScreen';
 import VoiceSearchScreen from '../screens/VoiceSearchScreen';
 import CameraSearchScreen from '../screens/CameraSearchScreen';
 import FoodInfoScreen from '../screens/FoodInfoScreen';
+import { AiMealPlanGenerationProvider } from '../context/AiMealPlanGenerationContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+const navigationRef = createNavigationContainerRef<any>();
 
 function MainTabs() {
   return (
@@ -61,16 +63,24 @@ function MainTabs() {
 
 export default function RootNavigator() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="HealthCheck" component={HealthCheckScreen} />
-        <Stack.Screen name="Growth" component={GrowthScreen} />
-        <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
-        <Stack.Screen name="VoiceSearch" component={VoiceSearchScreen} />
-        <Stack.Screen name="CameraSearch" component={CameraSearchScreen} />
-        <Stack.Screen name="FoodInfo" component={FoodInfoScreen} />
-      </Stack.Navigator>
+    <NavigationContainer ref={navigationRef}>
+      <AiMealPlanGenerationProvider
+        onViewMeal={() => {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('MainTabs', { screen: 'Meal' });
+          }
+        }}
+      >
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen name="HealthCheck" component={HealthCheckScreen} />
+          <Stack.Screen name="Growth" component={GrowthScreen} />
+          <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+          <Stack.Screen name="VoiceSearch" component={VoiceSearchScreen} />
+          <Stack.Screen name="CameraSearch" component={CameraSearchScreen} />
+          <Stack.Screen name="FoodInfo" component={FoodInfoScreen} />
+        </Stack.Navigator>
+      </AiMealPlanGenerationProvider>
     </NavigationContainer>
   );
 }
