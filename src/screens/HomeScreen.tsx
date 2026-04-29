@@ -12,6 +12,7 @@ import {
   Modal, //Health Insights, JJ
   Linking,
   TouchableOpacity, //Health Insights, JJ
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -38,6 +39,7 @@ import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
 import Markdown from 'react-native-markdown-display';
 // Use for details of each type of health insights, JJ
 import { FileText, X, ExternalLink } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type FoodSuggestion = {
   label: string;
@@ -61,6 +63,7 @@ export default function HomeScreen() {
   const [showDuration, setShowDuration] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
   const [showChildren, setShowChildren] = useState(false);
+  const currentLanguage = language; // Record the current language for API calls, JJ
 
   const [searchText, setSearchText] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -102,11 +105,27 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    const fetchTopics = async () => {
+    const fetchRecommendedTopics = async () => {
+      setTopicsLoading(true);
       try {
-        const response = await fetch(`${BASE_URL}/api/topics/all`);
+        // 1. 获取宝宝状态
+        let currentStatus = 'NORMAL';
+        if (activeChild && activeChild.status) {
+          currentStatus = activeChild.status.toUpperCase(); 
+        }
+
+        // 💡 2. 获取当前系统/应用选择的语言 (这里以你的实际变量名为准)
+        // 如果你没用插件，可以从全局 state 或 AsyncStorage 获取，例如 'en'
+        const lang = currentLanguage || 'en'; 
+
+        // 💡 3. 调用接口时带上 &lang 参数
+        const response = await fetch(
+          `${BASE_URL}/api/topics/recommend?status=${currentStatus}&lang=${lang}`
+        );
+
         if (response.ok) {
           const data = await response.json();
+          // 因为后端用了 DTO，data 里的每个 item 现在只有唯一的 title, summary, content
           setAllTopics(data);
         }
       } catch (error) {
@@ -115,8 +134,12 @@ export default function HomeScreen() {
         setTopicsLoading(false);
       }
     };
-    fetchTopics();
-  }, []);
+
+    fetchRecommendedTopics();
+
+    // 💡 4. 依赖项必须加上 currentLanguage！
+    // 这样当用户在设置里切换语言时，首页的文章会立刻重新请求后端，变更为对应语言。
+  }, [activeChild?.status, currentLanguage]);
 
   useEffect(() => {
     const query = searchText.trim();
@@ -531,7 +554,7 @@ export default function HomeScreen() {
           </Pressable>
 
           {/* Health Insights */} 
-          <SectionTitle title={t('Health Insights')} />
+          <SectionTitle title={t('healthInsights')} />
 
           {topicsLoading ? (
              <ActivityIndicator size="small" color={colors.primaryDark} style={{ paddingVertical: 20 }} />
@@ -541,7 +564,7 @@ export default function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.displayTopicsScroll}
             >
-              {displayTopics.map((topic) => (
+              {allTopics.map((topic) => (
                 <Pressable 
                   key={topic.id || topic.title} 
                   style={styles.topicCard}
@@ -553,7 +576,9 @@ export default function HomeScreen() {
                   {/* 1. 悬浮的黑色半透明标签 (保留旧版设计) */}
                   <View style={styles.topicCategoryBadge}>
                     <Text style={styles.topicCategoryText}>
-                      {topic?.category || "INSIGHT"}
+                      {topic?.category 
+                        ? t(topic.category.trim().toLowerCase()) // 💡 直接传 'habit', 'report' 等，不加 'category.'
+                        : t('healthInsights')}
                     </Text>
                   </View>
 
@@ -598,7 +623,7 @@ export default function HomeScreen() {
               <ScrollView contentContainerStyle={styles.modalBody}>
                 <View style={styles.modalTagRow}>
                   <FileText color={colors.primaryDark} size={18} />
-                  <Text style={styles.modalTagText}>Health Insights</Text>
+                  <Text style={styles.modalTagText}>{t('healthInsights')}</Text>
                 </View>
                 
                 <Text style={styles.modalTitle}>{selectedTopic.title}</Text>
@@ -619,7 +644,7 @@ export default function HomeScreen() {
                 <View style={styles.modalFooter}>
                   <TouchableOpacity onPress={() => Linking.openURL(selectedTopic.sourceUrl)} style={styles.modalActionBtn}>
                     <ExternalLink color="#3B82F6" size={18} />
-                    <Text style={styles.modalActionText}>Read Original</Text>
+                    <Text style={styles.modalActionText}>{t('readOriginal')}</Text>
                   </TouchableOpacity>
                 </View>
               )}
