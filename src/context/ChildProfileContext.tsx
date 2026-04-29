@@ -1,13 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  createContext,
+import React, {
   ReactNode,
+  createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from 'react';
-import { getFoodNutritionNeeds, NutritionNeeds } from '../services/api';
+import { NutritionNeeds } from '../services/api';
 
 export interface ChildProfile {
   id: number;
@@ -41,6 +42,9 @@ export interface Meal {
   id: string;
   type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   name: string;
+  nameEn?: string;
+  nameCn?: string;
+  nameMs?: string;
   carbs: number;
   protein: number;
   fat: number;
@@ -48,13 +52,22 @@ export interface Meal {
   ingredients?: Ingredient[];
   steps?: string[];
   imageUrl?: string;
+  strMealThumb?: string;
+  mealIconEmoji?: string;
+  [key: string]: any;
 }
 
 interface ShoppingItem {
   id: string;
   name: string;
+  nameEn?: string;
+  nameCn?: string;
+  nameMs?: string;
   category: 'vegetables' | 'protein' | 'carbs' | 'others';
   source: string;
+  sourceEn?: string;
+  sourceCn?: string;
+  sourceMs?: string;
   mealId: string;
   checked: boolean;
 }
@@ -62,9 +75,15 @@ interface ShoppingItem {
 interface SavedRecipe {
   id: string;
   name: string;
+  nameEn?: string;
+  nameCn?: string;
+  nameMs?: string;
   imageUrl?: string;
+  strMealThumb?: string;
+  mealIconEmoji?: string;
   meal?: Meal;
   savedAt: string;
+  [key: string]: any;
 }
 
 interface NutritionProgress {
@@ -72,6 +91,17 @@ interface NutritionProgress {
   carbs: { current: number; target: number };
   protein: { current: number; target: number };
   fat: { current: number; target: number };
+}
+
+interface StoredProfileState {
+  children?: ChildProfile[];
+  activeChildId?: number | null;
+  activeChild?: ChildProfile | null;
+  childMeals?: Record<number, Record<string, Meal[]>>;
+  selectedDate?: string;
+  nutritionNeeds?: NutritionNeeds;
+  savedRecipes?: SavedRecipe[];
+  shoppingList?: ShoppingItem[];
 }
 
 interface ChildProfileContextType {
@@ -83,7 +113,6 @@ interface ChildProfileContextType {
   removeChild: (childId: number) => void;
   switchToChild: (childId: number) => void;
   getOwnerKey: () => string;
-
   meals: Meal[];
   weeklyMeals: Record<string, Meal[]>;
   selectedDate: string;
@@ -93,51 +122,35 @@ interface ChildProfileContextType {
   replaceMeal: (mealId: string, date?: string) => void;
   deleteMeal: (mealId: string, date?: string) => void;
   toggleMeal: (mealId: string, date?: string) => void;
-
-  nutritionProgress: NutritionProgress;
   nutritionNeeds: NutritionNeeds;
-  refreshNutritionNeedsForChild: (child: ChildProfile) => Promise<void>;
+  nutritionProgress: NutritionProgress;
   setNutritionNeeds: (needs: Partial<NutritionNeeds>) => void;
-
   getTip: () => string;
-
   shoppingList: ShoppingItem[];
   toggleShoppingItem: (itemId: string) => void;
   getShoppingProgress: () => { checked: number; total: number };
-
   savedRecipes: SavedRecipe[];
   addSavedRecipe: (meal: Meal) => void;
   removeSavedRecipe: (id: string) => void;
   isRecipeSaved: (id: string) => boolean;
+  reloadChildProfileData: () => Promise<void>;
+  reloadFromStorage: () => Promise<void>;
+  refreshFromStorage: () => Promise<void>;
+  loadFromStorage: () => Promise<void>;
 }
 
-const ChildProfileContext = createContext<ChildProfileContextType | undefined>(
-  undefined
-);
+const ChildProfileContext = createContext<ChildProfileContextType | undefined>(undefined);
 
-const CHILDREN_STORAGE_KEY = 'JOMHEALTHY_CHILDREN_V1';
-const ACTIVE_CHILD_STORAGE_KEY = 'JOMHEALTHY_ACTIVE_CHILD_ID_V1';
-const CHILD_MEALS_STORAGE_KEY = 'JOMHEALTHY_CONTEXT_CHILD_MEALS_V1';
-const NUTRITION_NEEDS_STORAGE_KEY = 'JOMHEALTHY_NUTRITION_NEEDS_BY_OWNER_V1';
-const SAVED_RECIPES_STORAGE_KEY = 'JOMHEALTHY_SAVED_RECIPES_BY_OWNER_V1';
-const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_CONTEXT_SHOPPING_BY_OWNER_V1';
-
-const GUEST_OWNER_KEY = 'guest';
-
-const DEFAULT_NUTRITION_NEEDS: NutritionNeeds = {
-  calories: 0,
-  carbs: 155,
-  protein: 32,
-  fat: 28,
-};
+const PROFILE_STATE_KEY = 'JOMHEALTHY_CHILD_PROFILE_CONTEXT_V1';
+const CHILDREN_KEY = 'JOMHEALTHY_CHILDREN_V1';
+const ACTIVE_CHILD_ID_KEY = 'JOMHEALTHY_ACTIVE_CHILD_ID_V1';
+const CHILD_MEALS_KEY = 'JOMHEALTHY_CHILD_MEALS_V1';
+const NUTRITION_NEEDS_KEY = 'JOMHEALTHY_NUTRITION_NEEDS_V1';
+const SAVED_RECIPES_KEY = 'JOMHEALTHY_SAVED_RECIPES_V1';
+const SHOPPING_BY_OWNER_KEY = 'JOMHEALTHY_SHOPPING_LIST_BY_OWNER_V1';
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
-
-const toDateKey = (date: Date) =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
-    date.getDate()
-  )}`;
-
+const toDateKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 const getTodayDateString = (): string => toDateKey(new Date());
 
 const addDays = (dateString: string, days: number) => {
@@ -147,239 +160,67 @@ const addDays = (dateString: string, days: number) => {
   return toDateKey(date);
 };
 
-const getOwnerKeyFromChild = (child: ChildProfile | null) => {
-  return child ? `child-${child.id}` : GUEST_OWNER_KEY;
-};
+function safeJsonParse(value: string | null | undefined) {
+  if (!value) return null;
 
-function pickNumber(...values: any[]) {
-  for (const value of values) {
-    const num = Number(value);
-    if (value !== null && value !== undefined && Number.isFinite(num)) {
-      return num;
-    }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
   }
-  return 0;
 }
 
-function getAgeMonths(child: ChildProfile) {
-  if (child.birthday) {
-    const normalized = String(child.birthday).replace(/-/g, '/');
-    const [year, month, day] = normalized.split('/').map(Number);
-
-    if (year && month && day) {
-      const birthDate = new Date(year, month - 1, day);
-      const today = new Date();
-
-      let months =
-        (today.getFullYear() - birthDate.getFullYear()) * 12 +
-        today.getMonth() -
-        birthDate.getMonth();
-
-      if (today.getDate() < birthDate.getDate()) {
-        months -= 1;
-      }
-
-      return Math.max(months, 0);
-    }
-  }
-
-  return Math.max(Number(child.age || 7) * 12, 0);
+function isPlainObject(value: any) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseNutritionNeeds(payload: any): NutritionNeeds {
-  const raw = payload?.data ?? payload ?? {};
-  const data = Array.isArray(raw) ? raw[0] || {} : raw;
+function isChildProfileArray(value: any): value is ChildProfile[] {
+  return (
+    Array.isArray(value) &&
+    value.every((item) =>
+      item &&
+      typeof item === 'object' &&
+      item.id !== undefined &&
+      item.nickname !== undefined &&
+      item.age !== undefined
+    )
+  );
+}
+
+function isSavedRecipeArray(value: any): value is SavedRecipe[] {
+  return Array.isArray(value) && value.every((item) => item && typeof item === 'object' && item.id !== undefined);
+}
+
+function normalizeNutritionNeeds(value: any): NutritionNeeds | null {
+  if (!isPlainObject(value)) return null;
+
+  const carbs = Number(value.carbs ?? value.carbohydrate ?? value.targetCarbs);
+  const protein = Number(value.protein ?? value.targetProtein);
+  const fat = Number(value.fat ?? value.targetFat);
+  const calories = Number(value.calories ?? value.energyKcal ?? value.kcal ?? 0);
+
+  if (!Number.isFinite(carbs) && !Number.isFinite(protein) && !Number.isFinite(fat)) {
+    return null;
+  }
 
   return {
-    calories:
-      pickNumber(
-        data.calories,
-        data.calorie,
-        data.energy,
-        data.energyKcal,
-        data.totalEnergyKcal,
-        data.targetCalories,
-        data.targetCaloriesKcal,
-        data.dailyCalories,
-        data.dailyEnergyKcal
-      ) || DEFAULT_NUTRITION_NEEDS.calories,
-
-    carbs:
-      pickNumber(
-        data.carbs,
-        data.carb,
-        data.carbsG,
-        data.carbohydrate,
-        data.carbohydrates,
-        data.carbohydrateG,
-        data.carbohydratesG,
-        data.carbohydrateTargetG,
-        data.targetCarbsG,
-        data.targetCarbohydrateG,
-        data.dailyCarbsG,
-        data.dailyCarbohydrateG
-      ) || DEFAULT_NUTRITION_NEEDS.carbs,
-
-    protein:
-      pickNumber(
-        data.protein,
-        data.proteins,
-        data.proteinG,
-        data.proteinsG,
-        data.proteinTargetG,
-        data.targetProteinG,
-        data.dailyProteinG
-      ) || DEFAULT_NUTRITION_NEEDS.protein,
-
-    fat:
-      pickNumber(
-        data.fat,
-        data.fats,
-        data.fatG,
-        data.fatsG,
-        data.fatTargetG,
-        data.targetFatG,
-        data.dailyFatG
-      ) || DEFAULT_NUTRITION_NEEDS.fat,
+    calories: Number.isFinite(calories) ? calories : 0,
+    carbs: Number.isFinite(carbs) ? carbs : 155,
+    protein: Number.isFinite(protein) ? protein : 32,
+    fat: Number.isFinite(fat) ? fat : 28,
   };
 }
 
-function hasValidNutritionNeeds(needs?: NutritionNeeds) {
-  if (!needs) return false;
-  return Number(needs.carbs) > 0 && Number(needs.protein) > 0 && Number(needs.fat) > 0;
-}
-
-const mealPools: Record<Meal['type'], Omit<Meal, 'id' | 'type'>[]> = {
-  breakfast: [
-    {
-      name: 'Oatmeal with Banana & Milk',
-      carbs: 48,
-      protein: 12,
-      fat: 8,
-      imageUrl:
-        'https://images.unsplash.com/photo-1517673400267-0251440c45dc?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Oats', quantity: '1 bowl', category: 'carbs' },
-        { name: 'Banana', quantity: '1 piece', category: 'others' },
-        { name: 'Milk', quantity: '1 cup', category: 'others' },
-      ],
-      steps: ['Cook oats with milk.', 'Slice banana.', 'Serve warm with banana on top.'],
-    },
-    {
-      name: 'Scrambled Eggs with Toast',
-      carbs: 36,
-      protein: 18,
-      fat: 11,
-      imageUrl:
-        'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Eggs', quantity: '2 eggs', category: 'protein' },
-        { name: 'Whole wheat bread', quantity: '2 slices', category: 'carbs' },
-        { name: 'Tomato', quantity: '1 small', category: 'vegetables' },
-      ],
-      steps: ['Whisk eggs.', 'Scramble on low heat.', 'Toast bread and serve with tomato.'],
-    },
-  ],
-  lunch: [
-    {
-      name: 'Grilled Chicken Rice with Vegetables',
-      carbs: 58,
-      protein: 32,
-      fat: 12,
-      imageUrl:
-        'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Chicken breast', quantity: '150g', category: 'protein' },
-        { name: 'Rice', quantity: '1 cup', category: 'carbs' },
-        { name: 'Broccoli', quantity: '1 cup', category: 'vegetables' },
-      ],
-      steps: ['Grill chicken until cooked.', 'Cook rice.', 'Steam vegetables and serve together.'],
-    },
-    {
-      name: 'Chicken Pasta Primavera',
-      carbs: 62,
-      protein: 28,
-      fat: 14,
-      imageUrl:
-        'https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Pasta', quantity: '1 plate', category: 'carbs' },
-        { name: 'Chicken', quantity: '120g', category: 'protein' },
-        { name: 'Mixed vegetables', quantity: '1 cup', category: 'vegetables' },
-      ],
-      steps: ['Boil pasta.', 'Cook chicken.', 'Mix with vegetables and light sauce.'],
-    },
-  ],
-  dinner: [
-    {
-      name: 'Fish Soup with Rice',
-      carbs: 45,
-      protein: 27,
-      fat: 9,
-      imageUrl:
-        'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Fish fillet', quantity: '150g', category: 'protein' },
-        { name: 'Rice', quantity: '1 cup', category: 'carbs' },
-        { name: 'Mushrooms', quantity: '1 cup', category: 'vegetables' },
-      ],
-      steps: ['Simmer soup base.', 'Add fish and mushrooms.', 'Serve with rice.'],
-    },
-    {
-      name: 'Beef Stir Fry with Noodles',
-      carbs: 55,
-      protein: 30,
-      fat: 16,
-      imageUrl:
-        'https://images.unsplash.com/photo-1552611052-33e04de081de?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Beef', quantity: '120g', category: 'protein' },
-        { name: 'Noodles', quantity: '1 plate', category: 'carbs' },
-        { name: 'Pak choy', quantity: '1 cup', category: 'vegetables' },
-      ],
-      steps: ['Cook noodles.', 'Stir fry beef.', 'Add vegetables and noodles.'],
-    },
-  ],
-  snack: [
-    {
-      name: 'Yogurt with Fresh Fruit',
-      carbs: 24,
-      protein: 8,
-      fat: 4,
-      imageUrl:
-        'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Yogurt', quantity: '1 cup', category: 'others' },
-        { name: 'Fruit', quantity: '1 bowl', category: 'others' },
-      ],
-      steps: ['Add yogurt to a bowl.', 'Top with fruit.', 'Serve chilled.'],
-    },
-    {
-      name: 'Apple Slices with Peanut Butter',
-      carbs: 28,
-      protein: 7,
-      fat: 9,
-      imageUrl:
-        'https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?w=800&h=400&fit=crop',
-      ingredients: [
-        { name: 'Apple', quantity: '1 piece', category: 'others' },
-        { name: 'Peanut butter', quantity: '2 tbsp', category: 'others' },
-      ],
-      steps: ['Slice apple.', 'Serve with peanut butter.'],
-    },
-  ],
-};
-
-const makeMeal = (type: Meal['type']): Meal => {
-  const pool = mealPools[type];
-  const item = pool[Math.floor(Math.random() * pool.length)];
-
+function makeMeal(type: Meal['type']): Meal {
   return {
     id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type,
-    ...item,
+    name: type === 'breakfast' ? 'Oatmeal with Banana' : type === 'lunch' ? 'Chicken Rice' : type === 'dinner' ? 'Vegetable Soup' : 'Apple Slices',
+    carbs: type === 'snack' ? 20 : 45,
+    protein: type === 'snack' ? 2 : 18,
+    fat: type === 'snack' ? 1 : 8,
   };
-};
+}
 
 const generateMealsForDay = (): Meal[] => [
   makeMeal('breakfast'),
@@ -388,353 +229,179 @@ const generateMealsForDay = (): Meal[] => [
   makeMeal('snack'),
 ];
 
-function buildShoppingListFromMeals(meals: Meal[]): ShoppingItem[] {
-  const map = new Map<string, ShoppingItem>();
-
-  meals.forEach((meal) => {
-    meal.ingredients?.forEach((ingredient) => {
-      const id = `${ingredient.name.toLowerCase()}-${ingredient.category}`.replace(
-        /\s+/g,
-        '-'
-      );
-
-      const existing = map.get(id);
-
-      if (existing) {
-        existing.source = existing.source.includes(meal.name)
-          ? existing.source
-          : `${existing.source}, ${meal.name}`;
-        return;
-      }
-
-      map.set(id, {
-        id,
-        name: ingredient.name,
-        category: ingredient.category,
-        source: meal.name,
-        mealId: meal.id,
-        checked: false,
-      });
-    });
-  });
-
-  return Array.from(map.values());
-}
-
-export function ChildProfileProvider({
-  children: childrenProp,
-}: {
-  children: ReactNode;
-}) {
+export function ChildProfileProvider({ children: childrenProp }: { children: ReactNode }) {
   const [childrenList, setChildrenList] = useState<ChildProfile[]>([]);
   const [activeChild, setActiveChildState] = useState<ChildProfile | null>(null);
+  const [childMeals, setChildMeals] = useState<Record<number, Record<string, Meal[]>>>({});
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString());
+  const [nutritionNeeds, setNutritionNeedsState] = useState<NutritionNeeds>({
+    calories: 0,
+    carbs: 155,
+    protein: 32,
+    fat: 28,
+  });
+  const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>([]);
+  const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
+  const [hydrated, setHydrated] = useState(false);
 
-  const [childMeals, setChildMeals] = useState<
-    Record<string, Record<string, Meal[]>>
-  >({});
+  const getOwnerKey = useCallback(() => {
+    if (!activeChild?.id) return 'guest';
+    return `child_${activeChild.id}`;
+  }, [activeChild?.id]);
 
-  const [selectedDate, setSelectedDate] =
-    useState<string>(getTodayDateString());
+  const setActiveChild = useCallback((child: ChildProfile | null) => {
+    setActiveChildState(child);
+  }, []);
 
-  const [nutritionNeedsByOwner, setNutritionNeedsByOwner] = useState<
-    Record<string, NutritionNeeds>
-  >({});
+  const reloadChildProfileData = useCallback(async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const pairs = await AsyncStorage.multiGet(keys);
+      const parsedByKey: Record<string, any> = {};
 
-  const [savedRecipesByOwner, setSavedRecipesByOwner] = useState<
-    Record<string, SavedRecipe[]>
-  >({});
+      pairs.forEach(([key, value]) => {
+        parsedByKey[key] = safeJsonParse(value);
+      });
 
-  const [shoppingListByOwner, setShoppingListByOwner] = useState<
-    Record<string, ShoppingItem[]>
-  >({});
+      const stateCandidates: any[] = [
+        parsedByKey[PROFILE_STATE_KEY],
+        parsedByKey.profileState,
+        parsedByKey.childProfileState,
+        parsedByKey.jomhealthyProfileState,
+      ].filter(Boolean);
 
-  const [loaded, setLoaded] = useState(false);
-
-  const ownerKey = getOwnerKeyFromChild(activeChild);
-
-  const nutritionNeeds =
-    nutritionNeedsByOwner[ownerKey] || DEFAULT_NUTRITION_NEEDS;
-
-  const savedRecipes = savedRecipesByOwner[ownerKey] || [];
-  const shoppingList = shoppingListByOwner[ownerKey] || [];
-
-  const refreshNutritionNeedsForChild = async (child: ChildProfile) => {
-    const heightCm = Number(child.height);
-    const weightKg = Number(child.weight);
-    const ageMonths = getAgeMonths(child);
-    const gender = child.gender === 'girl' ? 2 : 1;
-    const childOwnerKey = getOwnerKeyFromChild(child);
-
-    if (!heightCm || !weightKg || !ageMonths) {
-      setNutritionNeedsByOwner((prev) => ({
-        ...prev,
-        [childOwnerKey]: prev[childOwnerKey] || DEFAULT_NUTRITION_NEEDS,
-      }));
-      return;
-    }
-
-    const result = await getFoodNutritionNeeds({
-      heightCm,
-      weightKg,
-      ageMonths,
-      gender,
-    });
-
-    if (!result.ok) {
-      setNutritionNeedsByOwner((prev) => ({
-        ...prev,
-        [childOwnerKey]: prev[childOwnerKey] || DEFAULT_NUTRITION_NEEDS,
-      }));
-      return;
-    }
-
-    const nextNeeds = parseNutritionNeeds(result.data);
-
-    setNutritionNeedsByOwner((prev) => ({
-      ...prev,
-      [childOwnerKey]: nextNeeds,
-    }));
-  };
-
-  useEffect(() => {
-    const loadAll = async () => {
-      try {
-        const [
-          rawChildren,
-          rawActiveChildId,
-          rawMeals,
-          rawNutritionNeeds,
-          rawSavedRecipes,
-          rawShoppingList,
-        ] = await Promise.all([
-          AsyncStorage.getItem(CHILDREN_STORAGE_KEY),
-          AsyncStorage.getItem(ACTIVE_CHILD_STORAGE_KEY),
-          AsyncStorage.getItem(CHILD_MEALS_STORAGE_KEY),
-          AsyncStorage.getItem(NUTRITION_NEEDS_STORAGE_KEY),
-          AsyncStorage.getItem(SAVED_RECIPES_STORAGE_KEY),
-          AsyncStorage.getItem(SHOPPING_LIST_STORAGE_KEY),
-        ]);
-
-        const parsedChildren: ChildProfile[] = rawChildren
-          ? JSON.parse(rawChildren)
-          : [];
-
-        const validChildren = Array.isArray(parsedChildren)
-          ? parsedChildren
-          : [];
-
-        setChildrenList(validChildren);
-
-        const parsedNeeds = rawNutritionNeeds ? JSON.parse(rawNutritionNeeds) : {};
-        const validNeeds =
-          parsedNeeds && typeof parsedNeeds === 'object' ? parsedNeeds : {};
-        setNutritionNeedsByOwner(validNeeds);
-
-        const parsedActiveChildId = rawActiveChildId
-          ? Number(rawActiveChildId)
-          : null;
-
-        if (
-          parsedActiveChildId &&
-          validChildren.some((child) => child.id === parsedActiveChildId)
-        ) {
-          const matchedChild =
-            validChildren.find((child) => child.id === parsedActiveChildId) ||
-            null;
-          setActiveChildState(matchedChild);
-        } else if (validChildren.length > 0) {
-          setActiveChildState(validChildren[0]);
-        } else {
-          setActiveChildState(null);
+      Object.values(parsedByKey).forEach((value) => {
+        if (isPlainObject(value) && (value.children || value.childrenList || value.activeChild || value.savedRecipes)) {
+          stateCandidates.push(value);
         }
+      });
 
-        if (rawMeals) {
-          const parsedMeals = JSON.parse(rawMeals);
-          setChildMeals(
-            parsedMeals && typeof parsedMeals === 'object' ? parsedMeals : {}
-          );
-        }
+      const nextState: StoredProfileState = {};
 
-        if (rawSavedRecipes) {
-          const parsedRecipes = JSON.parse(rawSavedRecipes);
-          setSavedRecipesByOwner(
-            parsedRecipes && typeof parsedRecipes === 'object'
-              ? parsedRecipes
-              : {}
-          );
-        }
-
-        if (rawShoppingList) {
-          const parsedShopping = JSON.parse(rawShoppingList);
-          setShoppingListByOwner(
-            parsedShopping && typeof parsedShopping === 'object'
-              ? parsedShopping
-              : {}
-          );
-        }
-
-        setTimeout(() => {
-          validChildren.forEach((child) => {
-            const key = getOwnerKeyFromChild(child);
-            if (!hasValidNutritionNeeds(validNeeds[key])) {
-              refreshNutritionNeedsForChild(child);
-            }
-          });
-        }, 0);
-      } catch (error) {
-        console.log('Load child profile context failed:', error);
-      } finally {
-        setLoaded(true);
+      for (const state of stateCandidates) {
+        if (isChildProfileArray(state.children)) nextState.children = state.children;
+        if (isChildProfileArray(state.childrenList)) nextState.children = state.childrenList;
+        if (state.activeChildId !== undefined) nextState.activeChildId = Number(state.activeChildId);
+        if (state.activeChild && typeof state.activeChild === 'object') nextState.activeChild = state.activeChild;
+        if (state.childMeals && typeof state.childMeals === 'object') nextState.childMeals = state.childMeals;
+        if (state.weeklyMeals && typeof state.weeklyMeals === 'object') nextState.childMeals = state.weeklyMeals;
+        if (typeof state.selectedDate === 'string') nextState.selectedDate = state.selectedDate;
+        if (normalizeNutritionNeeds(state.nutritionNeeds)) nextState.nutritionNeeds = normalizeNutritionNeeds(state.nutritionNeeds) || undefined;
+        if (isSavedRecipeArray(state.savedRecipes)) nextState.savedRecipes = state.savedRecipes;
+        if (Array.isArray(state.shoppingList)) nextState.shoppingList = state.shoppingList;
       }
-    };
 
-    loadAll();
+      const directChildren = parsedByKey[CHILDREN_KEY] || parsedByKey.children || parsedByKey.childProfiles || parsedByKey.JOMHEALTHY_CHILDREN;
+      if (isChildProfileArray(directChildren)) nextState.children = directChildren;
+
+      const directActiveChildId = parsedByKey[ACTIVE_CHILD_ID_KEY] ?? parsedByKey.activeChildId;
+      if (directActiveChildId !== undefined && directActiveChildId !== null) {
+        nextState.activeChildId = Number(directActiveChildId);
+      }
+
+      const directActiveChild = parsedByKey.activeChild || parsedByKey.JOMHEALTHY_ACTIVE_CHILD;
+      if (directActiveChild && typeof directActiveChild === 'object') nextState.activeChild = directActiveChild;
+
+      const directMeals = parsedByKey[CHILD_MEALS_KEY] || parsedByKey.childMeals;
+      if (directMeals && typeof directMeals === 'object') nextState.childMeals = directMeals;
+
+      const directNeeds = normalizeNutritionNeeds(parsedByKey[NUTRITION_NEEDS_KEY] || parsedByKey.nutritionNeeds);
+      if (directNeeds) nextState.nutritionNeeds = directNeeds;
+
+      const directSaved = parsedByKey[SAVED_RECIPES_KEY] || parsedByKey.savedRecipes || parsedByKey.JOMHEALTHY_SAVED_RECIPES;
+      if (isSavedRecipeArray(directSaved)) nextState.savedRecipes = directSaved;
+
+      const childrenFromBackup = nextState.children || [];
+      const activeFromBackup =
+        (nextState.activeChildId !== undefined && childrenFromBackup.find((child) => child.id === nextState.activeChildId)) ||
+        (nextState.activeChild && childrenFromBackup.find((child) => child.id === nextState.activeChild?.id)) ||
+        nextState.activeChild ||
+        childrenFromBackup[0] ||
+        null;
+
+      setChildrenList(childrenFromBackup);
+      setActiveChildState(activeFromBackup);
+      setChildMeals(nextState.childMeals || {});
+      setSelectedDate(nextState.selectedDate || getTodayDateString());
+      setNutritionNeedsState(nextState.nutritionNeeds || { calories: 0, carbs: 155, protein: 32, fat: 28 });
+      setSavedRecipes(nextState.savedRecipes || []);
+
+      const ownerKey = activeFromBackup?.id ? `child_${activeFromBackup.id}` : 'guest';
+      const shoppingByOwner = parsedByKey[SHOPPING_BY_OWNER_KEY];
+
+      if (shoppingByOwner && typeof shoppingByOwner === 'object') {
+        const ownerShopping = shoppingByOwner[ownerKey] || shoppingByOwner.guest || [];
+        setShoppingList(Array.isArray(ownerShopping) ? ownerShopping : []);
+      } else {
+        setShoppingList(nextState.shoppingList || []);
+      }
+    } catch (error) {
+      console.log('Reload child profile data failed:', error);
+    } finally {
+      setHydrated(true);
+    }
   }, []);
 
   useEffect(() => {
-    if (!loaded) return;
+    reloadChildProfileData();
+  }, [reloadChildProfileData]);
 
-    AsyncStorage.setItem(CHILDREN_STORAGE_KEY, JSON.stringify(childrenList)).catch(
-      (error) => {
-        console.log('Save children failed:', error);
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const persist = async () => {
+      try {
+        const activeChildId = activeChild?.id ?? null;
+        const state: StoredProfileState = {
+          children: childrenList,
+          activeChildId,
+          activeChild,
+          childMeals,
+          selectedDate,
+          nutritionNeeds,
+          savedRecipes,
+          shoppingList,
+        };
+
+        await AsyncStorage.multiSet([
+          [PROFILE_STATE_KEY, JSON.stringify(state)],
+          [CHILDREN_KEY, JSON.stringify(childrenList)],
+          [ACTIVE_CHILD_ID_KEY, JSON.stringify(activeChildId)],
+          [CHILD_MEALS_KEY, JSON.stringify(childMeals)],
+          [NUTRITION_NEEDS_KEY, JSON.stringify(nutritionNeeds)],
+          [SAVED_RECIPES_KEY, JSON.stringify(savedRecipes)],
+        ]);
+      } catch (error) {
+        console.log('Persist child profile data failed:', error);
       }
-    );
-  }, [childrenList, loaded]);
+    };
 
-  useEffect(() => {
-    if (!loaded) return;
-
-    if (activeChild) {
-      AsyncStorage.setItem(ACTIVE_CHILD_STORAGE_KEY, String(activeChild.id)).catch(
-        (error) => {
-          console.log('Save active child failed:', error);
-        }
-      );
-    } else {
-      AsyncStorage.removeItem(ACTIVE_CHILD_STORAGE_KEY).catch(() => {});
-    }
-  }, [activeChild, loaded]);
-
-  useEffect(() => {
-    if (!loaded) return;
-
-    AsyncStorage.setItem(CHILD_MEALS_STORAGE_KEY, JSON.stringify(childMeals)).catch(
-      (error) => {
-        console.log('Save meals failed:', error);
-      }
-    );
-  }, [childMeals, loaded]);
-
-  useEffect(() => {
-    if (!loaded) return;
-
-    AsyncStorage.setItem(
-      NUTRITION_NEEDS_STORAGE_KEY,
-      JSON.stringify(nutritionNeedsByOwner)
-    ).catch((error) => {
-      console.log('Save nutrition needs failed:', error);
-    });
-  }, [nutritionNeedsByOwner, loaded]);
-
-  useEffect(() => {
-    if (!loaded) return;
-
-    AsyncStorage.setItem(
-      SAVED_RECIPES_STORAGE_KEY,
-      JSON.stringify(savedRecipesByOwner)
-    ).catch((error) => {
-      console.log('Save saved recipes failed:', error);
-    });
-  }, [savedRecipesByOwner, loaded]);
-
-  useEffect(() => {
-    if (!loaded) return;
-
-    AsyncStorage.setItem(
-      SHOPPING_LIST_STORAGE_KEY,
-      JSON.stringify(shoppingListByOwner)
-    ).catch((error) => {
-      console.log('Save shopping list failed:', error);
-    });
-  }, [shoppingListByOwner, loaded]);
-
-  const setActiveChild = (child: ChildProfile | null) => {
-    setActiveChildState(child);
-
-    if (child) {
-      const key = getOwnerKeyFromChild(child);
-      if (!hasValidNutritionNeeds(nutritionNeedsByOwner[key])) {
-        refreshNutritionNeedsForChild(child);
-      }
-    }
-  };
+    persist();
+  }, [childrenList, activeChild, childMeals, selectedDate, nutritionNeeds, savedRecipes, shoppingList, hydrated]);
 
   const addChild = (child: ChildProfile) => {
     setChildrenList((prev) => {
       const exists = prev.some((item) => item.id === child.id);
-
-      if (exists) {
-        return prev.map((item) => (item.id === child.id ? child : item));
-      }
-
-      return [...prev, child];
+      return exists ? prev.map((item) => (item.id === child.id ? child : item)) : [...prev, child];
     });
-
-    setChildMeals((prev) => ({
-      ...prev,
-      [`child-${child.id}`]: prev[`child-${child.id}`] ?? {},
-    }));
-
+    setChildMeals((prev) => ({ ...prev, [child.id]: prev[child.id] ?? {} }));
     setActiveChildState(child);
-    refreshNutritionNeedsForChild(child);
   };
 
   const updateChild = (child: ChildProfile) => {
-    setChildrenList((prev) =>
-      prev.map((item) => (item.id === child.id ? child : item))
-    );
-
-    if (activeChild?.id === child.id) {
-      setActiveChildState(child);
-    }
-
-    refreshNutritionNeedsForChild(child);
+    setChildrenList((prev) => prev.map((item) => (item.id === child.id ? child : item)));
+    if (activeChild?.id === child.id) setActiveChildState(child);
   };
 
   const removeChild = (childId: number) => {
-    const childOwnerKey = `child-${childId}`;
-
     setChildrenList((prev) => {
       const next = prev.filter((item) => item.id !== childId);
-
-      if (activeChild?.id === childId) {
-        setActiveChildState(next[0] ?? null);
-      }
-
+      if (activeChild?.id === childId) setActiveChildState(next[0] ?? null);
       return next;
     });
-
     setChildMeals((prev) => {
       const next = { ...prev };
-      delete next[childOwnerKey];
-      return next;
-    });
-
-    setNutritionNeedsByOwner((prev) => {
-      const next = { ...prev };
-      delete next[childOwnerKey];
-      return next;
-    });
-
-    setSavedRecipesByOwner((prev) => {
-      const next = { ...prev };
-      delete next[childOwnerKey];
-      return next;
-    });
-
-    setShoppingListByOwner((prev) => {
-      const next = { ...prev };
-      delete next[childOwnerKey];
+      delete next[childId];
       return next;
     });
   };
@@ -742,30 +409,20 @@ export function ChildProfileProvider({
   const switchToChild = (childId: number) => {
     const child = childrenList.find((item) => item.id === childId);
     if (!child) return;
-
     setActiveChildState(child);
-
-    setChildMeals((prev) => ({
-      ...prev,
-      [`child-${childId}`]: prev[`child-${childId}`] ?? {},
-    }));
-
-    const key = getOwnerKeyFromChild(child);
-    if (!hasValidNutritionNeeds(nutritionNeedsByOwner[key])) {
-      refreshNutritionNeedsForChild(child);
-    }
+    setChildMeals((prev) => ({ ...prev, [childId]: prev[childId] ?? {} }));
   };
 
-  const getOwnerKey = () => getOwnerKeyFromChild(activeChild);
-
-  const weeklyMeals = childMeals[ownerKey] ?? {};
+  const weeklyMeals = activeChild ? childMeals[activeChild.id] ?? {} : {};
   const meals = weeklyMeals[selectedDate] ?? [];
 
   const getMealsForDate = (date: string) => {
-    return childMeals[ownerKey]?.[date] ?? [];
+    if (!activeChild) return [];
+    return childMeals[activeChild.id]?.[date] ?? [];
   };
 
   const generateNewMealPlan = (days = 1, startDate = selectedDate) => {
+    if (!activeChild) return;
     const newDates: Record<string, Meal[]> = {};
 
     for (let i = 0; i < days; i += 1) {
@@ -774,197 +431,129 @@ export function ChildProfileProvider({
 
     setChildMeals((prev) => ({
       ...prev,
-      [ownerKey]: {
-        ...(prev[ownerKey] ?? {}),
+      [activeChild.id]: {
+        ...(prev[activeChild.id] ?? {}),
         ...newDates,
       },
-    }));
-
-    const allMeals = Object.values(newDates).flat();
-    const generatedShoppingList = buildShoppingListFromMeals(allMeals);
-
-    setShoppingListByOwner((prev) => ({
-      ...prev,
-      [ownerKey]: generatedShoppingList,
     }));
   };
 
   const replaceMeal = (mealId: string, date = selectedDate) => {
+    if (!activeChild) return;
+
     setChildMeals((prev) => {
-      const current = prev[ownerKey]?.[date] ?? [];
+      const current = prev[activeChild.id]?.[date] ?? [];
       const target = current.find((item) => item.id === mealId);
-
       if (!target) return prev;
-
-      const nextMeals = current.map((item) =>
-        item.id === mealId ? makeMeal(target.type) : item
-      );
-
-      setShoppingListByOwner((shoppingPrev) => ({
-        ...shoppingPrev,
-        [ownerKey]: buildShoppingListFromMeals(nextMeals),
-      }));
 
       return {
         ...prev,
-        [ownerKey]: {
-          ...(prev[ownerKey] ?? {}),
-          [date]: nextMeals,
+        [activeChild.id]: {
+          ...(prev[activeChild.id] ?? {}),
+          [date]: current.map((item) => (item.id === mealId ? makeMeal(target.type) : item)),
         },
       };
     });
   };
 
   const deleteMeal = (mealId: string, date = selectedDate) => {
-    setChildMeals((prev) => {
-      const nextMeals = (prev[ownerKey]?.[date] ?? []).filter(
-        (item) => item.id !== mealId
-      );
+    if (!activeChild) return;
 
-      setShoppingListByOwner((shoppingPrev) => ({
-        ...shoppingPrev,
-        [ownerKey]: buildShoppingListFromMeals(nextMeals),
-      }));
-
-      return {
-        ...prev,
-        [ownerKey]: {
-          ...(prev[ownerKey] ?? {}),
-          [date]: nextMeals,
-        },
-      };
-    });
-  };
-
-  const toggleMeal = (mealId: string, date = selectedDate) => {
-    setChildMeals((prev) => {
-      const current = prev[ownerKey]?.[date] ?? [];
-
-      return {
-        ...prev,
-        [ownerKey]: {
-          ...(prev[ownerKey] ?? {}),
-          [date]: current.map((item) =>
-            item.id === mealId
-              ? { ...item, completed: !item.completed }
-              : item
-          ),
-        },
-      };
-    });
-  };
-
-  const nutritionProgress = useMemo<NutritionProgress>(() => {
-    const currentMeals = childMeals[ownerKey]?.[selectedDate] ?? [];
-
-    return {
-      calories: {
-        current: currentMeals.reduce(
-          (sum, item) => sum + item.carbs * 4 + item.protein * 4 + item.fat * 9,
-          0
-        ),
-        target: nutritionNeeds.calories || DEFAULT_NUTRITION_NEEDS.calories,
-      },
-      carbs: {
-        current: currentMeals.reduce((sum, item) => sum + item.carbs, 0),
-        target: nutritionNeeds.carbs || DEFAULT_NUTRITION_NEEDS.carbs,
-      },
-      protein: {
-        current: currentMeals.reduce((sum, item) => sum + item.protein, 0),
-        target: nutritionNeeds.protein || DEFAULT_NUTRITION_NEEDS.protein,
-      },
-      fat: {
-        current: currentMeals.reduce((sum, item) => sum + item.fat, 0),
-        target: nutritionNeeds.fat || DEFAULT_NUTRITION_NEEDS.fat,
-      },
-    };
-  }, [childMeals, ownerKey, selectedDate, nutritionNeeds]);
-
-  const setNutritionNeeds = (needs: Partial<NutritionNeeds>) => {
-    setNutritionNeedsByOwner((prev) => ({
+    setChildMeals((prev) => ({
       ...prev,
-      [ownerKey]: {
-        ...(prev[ownerKey] ?? DEFAULT_NUTRITION_NEEDS),
-        ...needs,
+      [activeChild.id]: {
+        ...(prev[activeChild.id] ?? {}),
+        [date]: (prev[activeChild.id]?.[date] ?? []).filter((item) => item.id !== mealId),
       },
     }));
   };
 
+  const toggleMeal = (mealId: string, date = selectedDate) => {
+    if (!activeChild) return;
+
+    setChildMeals((prev) => ({
+      ...prev,
+      [activeChild.id]: {
+        ...(prev[activeChild.id] ?? {}),
+        [date]: (prev[activeChild.id]?.[date] ?? []).map((item) =>
+          item.id === mealId ? { ...item, completed: !item.completed } : item
+        ),
+      },
+    }));
+  };
+
+  const nutritionProgress = useMemo<NutritionProgress>(() => {
+    const currentMeals = activeChild ? childMeals[activeChild.id]?.[selectedDate] ?? [] : [];
+
+    return {
+      calories: {
+        current: currentMeals.reduce((sum, item) => sum + item.carbs * 4 + item.protein * 4 + item.fat * 9, 0),
+        target: nutritionNeeds.calories || 0,
+      },
+      carbs: {
+        current: currentMeals.reduce((sum, item) => sum + item.carbs, 0),
+        target: nutritionNeeds.carbs || 155,
+      },
+      protein: {
+        current: currentMeals.reduce((sum, item) => sum + item.protein, 0),
+        target: nutritionNeeds.protein || 32,
+      },
+      fat: {
+        current: currentMeals.reduce((sum, item) => sum + item.fat, 0),
+        target: nutritionNeeds.fat || 28,
+      },
+    };
+  }, [activeChild, childMeals, selectedDate, nutritionNeeds]);
+
+  const setNutritionNeeds = (needs: Partial<NutritionNeeds>) => {
+    setNutritionNeedsState((prev) => ({ ...prev, ...needs }));
+  };
+
   const getTip = (): string => {
-    const proteinPercent =
-      (nutritionProgress.protein.current /
-        Math.max(nutritionProgress.protein.target, 1)) *
-      100;
+    const proteinPercent = (nutritionProgress.protein.current / Math.max(nutritionProgress.protein.target, 1)) * 100;
+    const carbsPercent = (nutritionProgress.carbs.current / Math.max(nutritionProgress.carbs.target, 1)) * 100;
 
-    const carbsPercent =
-      (nutritionProgress.carbs.current /
-        Math.max(nutritionProgress.carbs.target, 1)) *
-      100;
-
-    if (proteinPercent < 50) {
-      return 'I need more protein today! How about some chicken or eggs? 💪';
-    }
-
-    if (carbsPercent < 50) {
-      return "Let's get some energy! I'd love some rice or noodles! 🍚";
-    }
-
+    if (proteinPercent < 50) return 'I need more protein today! How about some chicken or eggs? 💪';
+    if (carbsPercent < 50) return "Let's get some energy! I'd love some rice or noodles! 🍚";
     return "I feel great! We're on track with our nutrition today! 😊";
   };
 
   const toggleShoppingItem = (itemId: string) => {
-    setShoppingListByOwner((prev) => ({
-      ...prev,
-      [ownerKey]: (prev[ownerKey] ?? []).map((item) =>
-        item.id === itemId ? { ...item, checked: !item.checked } : item
-      ),
-    }));
+    setShoppingList((prev) => prev.map((item) => (item.id === itemId ? { ...item, checked: !item.checked } : item)));
   };
 
   const getShoppingProgress = () => {
-    const currentShoppingList = shoppingListByOwner[ownerKey] ?? [];
-    const checked = currentShoppingList.filter((item) => item.checked).length;
-
-    return {
-      checked,
-      total: currentShoppingList.length,
-    };
+    const checked = shoppingList.filter((item) => item.checked).length;
+    return { checked, total: shoppingList.length };
   };
 
   const addSavedRecipe = (meal: Meal) => {
-    setSavedRecipesByOwner((prev) => {
-      const current = prev[ownerKey] ?? [];
+    setSavedRecipes((prev) => {
+      if (prev.some((item) => item.id === meal.id)) return prev;
 
-      if (current.some((item) => item.id === meal.id)) {
-        return prev;
-      }
-
-      return {
+      return [
+        {
+          id: meal.id,
+          name: meal.name,
+          nameEn: meal.nameEn || meal.name,
+          nameCn: meal.nameCn,
+          nameMs: meal.nameMs,
+          imageUrl: meal.imageUrl || meal.strMealThumb,
+          strMealThumb: meal.strMealThumb,
+          mealIconEmoji: meal.mealIconEmoji,
+          meal,
+          savedAt: new Date().toISOString(),
+        },
         ...prev,
-        [ownerKey]: [
-          {
-            id: meal.id,
-            name: meal.name,
-            imageUrl: meal.imageUrl,
-            meal,
-            savedAt: new Date().toISOString(),
-          },
-          ...current,
-        ],
-      };
+      ];
     });
   };
 
   const removeSavedRecipe = (id: string) => {
-    setSavedRecipesByOwner((prev) => ({
-      ...prev,
-      [ownerKey]: (prev[ownerKey] ?? []).filter((item) => item.id !== id),
-    }));
+    setSavedRecipes((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const isRecipeSaved = (id: string) => {
-    return (savedRecipesByOwner[ownerKey] ?? []).some((item) => item.id === id);
-  };
+  const isRecipeSaved = (id: string) => savedRecipes.some((item) => item.id === id);
 
   return (
     <ChildProfileContext.Provider
@@ -986,9 +575,8 @@ export function ChildProfileProvider({
         replaceMeal,
         deleteMeal,
         toggleMeal,
-        nutritionProgress,
         nutritionNeeds,
-        refreshNutritionNeedsForChild,
+        nutritionProgress,
         setNutritionNeeds,
         getTip,
         shoppingList,
@@ -998,6 +586,10 @@ export function ChildProfileProvider({
         addSavedRecipe,
         removeSavedRecipe,
         isRecipeSaved,
+        reloadChildProfileData,
+        reloadFromStorage: reloadChildProfileData,
+        refreshFromStorage: reloadChildProfileData,
+        loadFromStorage: reloadChildProfileData,
       }}
     >
       {childrenProp}
@@ -1007,10 +599,6 @@ export function ChildProfileProvider({
 
 export function useChildProfile() {
   const context = useContext(ChildProfileContext);
-
-  if (!context) {
-    throw new Error('useChildProfile must be used within ChildProfileProvider');
-  }
-
+  if (!context) throw new Error('useChildProfile must be used within ChildProfileProvider');
   return context;
 }

@@ -2,13 +2,12 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Image,
-  Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,7 +33,7 @@ type BackupPayload = {
   appName: 'JomHealthy';
   version: number;
   exportedAt: string;
-  data: Record<string, string>;
+  data: Record<string, any> | [string, any][];
 };
 
 const BACKUP_TYPE = 'JOMHEALTHY_BACKUP';
@@ -175,17 +174,97 @@ function normalizeBackupValue(value: any) {
   return JSON.stringify(value);
 }
 
+function isPlainObject(value: any) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function entriesFromBackupData(data: any, removeMetadata = false): [string, string][] {
+  const metadataKeys = new Set([
+    'backupType',
+    'appName',
+    'version',
+    'exportedAt',
+    'createdAt',
+    'data',
+  ]);
+
+  const entries: [string, string][] = [];
+
+  if (Array.isArray(data)) {
+    data.forEach((item) => {
+      if (Array.isArray(item) && item.length >= 2) {
+        const key = String(item[0] || '').trim();
+
+        if (key.length > 0 && (!removeMetadata || !metadataKeys.has(key))) {
+          entries.push([key, normalizeBackupValue(item[1])]);
+        }
+
+        return;
+      }
+
+      if (isPlainObject(item)) {
+        const key = String(item.key || item.name || '').trim();
+        const value = item.value ?? item.data;
+
+        if (key.length > 0 && value !== undefined && (!removeMetadata || !metadataKeys.has(key))) {
+          entries.push([key, normalizeBackupValue(value)]);
+        }
+      }
+    });
+
+    return entries;
+  }
+
+  if (isPlainObject(data)) {
+    Object.entries(data).forEach(([key, value]) => {
+      const cleanKey = String(key || '').trim();
+
+      if (cleanKey.length === 0) return;
+      if (removeMetadata && metadataKeys.has(cleanKey)) return;
+
+      entries.push([cleanKey, normalizeBackupValue(value)]);
+    });
+  }
+
+  return entries;
+}
+
+function extractBackupEntries(payload: any): [string, string][] {
+  if (!payload) return [];
+
+  const candidates = [
+    payload.data,
+    payload.asyncStorageData,
+    payload.asyncStorage,
+    payload.storageData,
+    payload.storage,
+    payload.items,
+  ];
+
+  for (const candidate of candidates) {
+    const entries = entriesFromBackupData(candidate);
+
+    if (entries.length > 0) {
+      return entries;
+    }
+  }
+
+  // Also support importing a raw AsyncStorage JSON object directly.
+  return entriesFromBackupData(payload, true);
+}
+
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const { t, language } = useLanguage();
+  const childProfile = useChildProfile() as any;
 
   const {
-    children,
+    children = [],
     activeChild,
-    savedRecipes,
+    savedRecipes = [],
     removeSavedRecipe,
     switchToChild,
-  } = useChildProfile();
+  } = childProfile;
 
   const [showChildren, setShowChildren] = useState(false);
   const [showImportGuide, setShowImportGuide] = useState(false);
@@ -259,7 +338,7 @@ export default function ProfileScreen() {
    * Keep children original order.
    * After switching children, button position will not jump.
    */
-  const visibleChildren = useMemo(() => {
+  const visibleChildren = useMemo<any[]>(() => {
     if (!children || children.length === 0) return [];
     return children.slice(0, 2);
   }, [children]);
@@ -268,7 +347,7 @@ export default function ProfileScreen() {
     switchToChild(childId);
   };
 
-  const exportAllDataToWhatsApp = async () => {
+  const exportAllDataToLocal = async () => {
     if (exportingData) return;
 
     setExportingData(true);
@@ -285,6 +364,16 @@ export default function ProfileScreen() {
         }
       });
 
+      if (Object.keys(data).length === 0) {
+        throw new Error(
+          getText(
+            'There is no app data to export yet.',
+            '当前还没有可以导出的 App 数据。',
+            'Belum ada data app untuk dieksport.'
+          )
+        );
+      }
+
       const payload: BackupPayload = {
         backupType: BACKUP_TYPE,
         appName: 'JomHealthy',
@@ -294,25 +383,52 @@ export default function ProfileScreen() {
       };
 
       const fileName = createBackupFileName();
+      const backupText = JSON.stringify(payload, null, 2);
+
+      const StorageAccessFramework = (FileSystem as any).StorageAccessFramework;
+
+      if (Platform.OS === 'android' && StorageAccessFramework) {
+        const permission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+
+        if (permission.granted && permission.directoryUri) {
+          const fileUri = await StorageAccessFramework.createFileAsync(
+            permission.directoryUri,
+            fileName,
+            'application/json'
+          );
+
+          await FileSystem.writeAsStringAsync(fileUri, backupText, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+
+          Alert.alert(
+            getText('Export complete', '导出完成', 'Eksport selesai'),
+            getText(
+              `Backup saved to your selected folder.\n\n${fileName}`,
+              `备份已保存到你选择的文件夹。\n\n${fileName}`,
+              `Sandaran telah disimpan ke folder yang dipilih.\n\n${fileName}`
+            )
+          );
+
+          return;
+        }
+      }
+
       const fileUri = `${getBackupDirectory()}${fileName}`;
 
-      await FileSystem.writeAsStringAsync(
-        fileUri,
-        JSON.stringify(payload, null, 2),
-        {
-          encoding: FileSystem.EncodingType.UTF8,
-        }
-      );
+      await FileSystem.writeAsStringAsync(fileUri, backupText, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
 
       const sharingAvailable = await Sharing.isAvailableAsync();
 
       if (!sharingAvailable) {
         Alert.alert(
-          getText('Sharing unavailable', '无法分享', 'Perkongsian tidak tersedia'),
+          getText('Export complete', '导出完成', 'Eksport selesai'),
           getText(
-            'This device does not support file sharing.',
-            '这个设备不支持文件分享。',
-            'Peranti ini tidak menyokong perkongsian fail.'
+            `Backup file created.\n\n${fileName}`,
+            `备份文件已创建。\n\n${fileName}`,
+            `Fail sandaran telah dibuat.\n\n${fileName}`
           )
         );
         return;
@@ -321,9 +437,9 @@ export default function ProfileScreen() {
       await Sharing.shareAsync(fileUri, {
         mimeType: 'application/json',
         dialogTitle: getText(
-          'Send backup to WhatsApp',
-          '发送备份到 WhatsApp',
-          'Hantar sandaran ke WhatsApp'
+          'Save JomHealthy backup file',
+          '保存 JomHealthy 备份文件',
+          'Simpan fail sandaran JomHealthy'
         ),
         UTI: 'public.json',
       });
@@ -340,21 +456,6 @@ export default function ProfileScreen() {
       );
     } finally {
       setExportingData(false);
-    }
-  };
-
-  const openWhatsApp = async () => {
-    try {
-      await Linking.openURL('whatsapp://app');
-    } catch (error) {
-      Alert.alert(
-        getText('Cannot open WhatsApp', '无法打开 WhatsApp', 'Tidak dapat membuka WhatsApp'),
-        getText(
-          'Please make sure WhatsApp is installed. You can also download the backup file from WhatsApp, then come back and choose it here.',
-          '请确认已安装 WhatsApp。你也可以先在 WhatsApp 下载备份文件，然后回来这里选择文件导入。',
-          'Pastikan WhatsApp telah dipasang. Anda juga boleh muat turun fail sandaran daripada WhatsApp, kemudian kembali dan pilih fail di sini.'
-        )
-      );
     }
   };
 
@@ -385,30 +486,38 @@ export default function ProfileScreen() {
       });
 
       const payload = JSON.parse(backupText);
-
-      if (!payload || payload.backupType !== BACKUP_TYPE || !payload.data) {
-        throw new Error('This is not a valid JomHealthy backup file.');
-      }
-
-      const entries = Object.entries(payload.data).map(([key, value]) => [
-        key,
-        normalizeBackupValue(value),
-      ]) as [string, string][];
+      const entries = extractBackupEntries(payload);
 
       if (entries.length === 0) {
-        throw new Error('The backup file is empty.');
+        throw new Error(
+          getText(
+            'This backup file does not contain any JomHealthy data.',
+            '这个备份文件里面没有 JomHealthy 数据。',
+            'Fail sandaran ini tidak mengandungi data JomHealthy.'
+          )
+        );
       }
 
       await AsyncStorage.multiSet(entries);
+
+      if (typeof childProfile.reloadChildProfileData === 'function') {
+        await childProfile.reloadChildProfileData();
+      } else if (typeof childProfile.reloadFromStorage === 'function') {
+        await childProfile.reloadFromStorage();
+      } else if (typeof childProfile.refreshFromStorage === 'function') {
+        await childProfile.refreshFromStorage();
+      } else if (typeof childProfile.loadFromStorage === 'function') {
+        await childProfile.loadFromStorage();
+      }
 
       setShowImportGuide(false);
 
       Alert.alert(
         getText('Import complete', '导入完成', 'Import selesai'),
         getText(
-          'Your backup has been restored. Please restart the app if some pages do not refresh immediately.',
-          '备份已恢复。如果部分页面没有立刻刷新，请重启 App。',
-          'Sandaran anda telah dipulihkan. Sila mulakan semula app jika sesetengah halaman tidak dikemas kini serta-merta.'
+          `Restored ${entries.length} data item(s) and refreshed the profile.`,
+          `已恢复 ${entries.length} 条数据，并已自动刷新档案。`,
+          `${entries.length} item data telah dipulihkan dan profil telah dikemas kini.`
         )
       );
     } catch (error: any) {
@@ -461,7 +570,7 @@ export default function ProfileScreen() {
               <View style={styles.childSwitchSlot}>
                 {visibleChildren.length > 0 ? (
                   <View style={styles.childSwitchWrap}>
-                    {visibleChildren.map((child) => {
+                    {visibleChildren.map((child: any) => {
                       const isActive = activeChild?.id === child.id;
 
                       return (
@@ -535,7 +644,7 @@ export default function ProfileScreen() {
               </Text>
 
               <View style={styles.tags}>
-                {tags.map((tag) => (
+                {tags.map((tag: string) => (
                   <Text key={getTagText(tag)} style={styles.tag}>
                     {getTagText(tag)}
                   </Text>
@@ -547,7 +656,7 @@ export default function ProfileScreen() {
           <Card>
             <Pressable
               style={styles.settingRow}
-              onPress={exportAllDataToWhatsApp}
+              onPress={exportAllDataToLocal}
               disabled={exportingData}
             >
               <View style={styles.settingIcon}>
@@ -562,9 +671,9 @@ export default function ProfileScreen() {
                 <Text style={styles.settingTitle}>{t('exportData')}</Text>
                 <Text style={styles.meta}>
                   {getText(
-                    'Share JSON backup to WhatsApp',
-                    '分享到 WhatsApp 的 JSON 备份',
-                    'Kongsi sandaran JSON ke WhatsApp'
+                    'Save JSON backup to phone storage',
+                    '保存 JSON 备份到手机本地',
+                    'Simpan sandaran JSON ke storan telefon'
                   )}
                 </Text>
               </View>
@@ -593,9 +702,9 @@ export default function ProfileScreen() {
                 <Text style={styles.settingTitle}>{t('importData')}</Text>
                 <Text style={styles.meta}>
                   {getText(
-                    'Open WhatsApp, then choose backup file',
-                    '打开 WhatsApp，然后选择备份文件',
-                    'Buka WhatsApp, kemudian pilih fail sandaran'
+                    'Choose a backup file from phone storage',
+                    '从手机本地选择备份文件',
+                    'Pilih fail sandaran daripada storan telefon'
                   )}
                 </Text>
               </View>
@@ -679,18 +788,18 @@ export default function ProfileScreen() {
           <View style={styles.importModal}>
             <View style={styles.importHeader}>
               <View style={styles.importIconBox}>
-                <Ionicons name="logo-whatsapp" size={24} color="#22C55E" />
+                <Ionicons name="document-attach-outline" size={24} color="#22C55E" />
               </View>
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.importTitle}>
-                  {getText('Import from WhatsApp', '从 WhatsApp 导入', 'Import dari WhatsApp')}
+                  {getText('Import Backup', '导入备份', 'Import Sandaran')}
                 </Text>
                 <Text style={styles.importSubTitle}>
                   {getText(
-                    'Find your backup file in WhatsApp first.',
-                    '先在 WhatsApp 找到你的备份文件。',
-                    'Cari fail sandaran anda di WhatsApp dahulu.'
+                    'Choose the JomHealthy backup JSON file from your phone.',
+                    '从手机本地选择 JomHealthy 备份 JSON 文件。',
+                    'Pilih fail JSON sandaran JomHealthy daripada telefon anda.'
                   )}
                 </Text>
               </View>
@@ -706,33 +815,27 @@ export default function ProfileScreen() {
             <View style={styles.importStepBox}>
               <Text style={styles.importStepText}>
                 {getText(
-                  '1. Tap Open WhatsApp and find the backup JSON in your chat.',
-                  '1. 点击打开 WhatsApp，在聊天里找到备份 JSON 文件。',
-                  '1. Ketik Buka WhatsApp dan cari JSON sandaran dalam chat.'
+                  '1. Tap Choose Backup File.',
+                  '1. 点击选择备份文件。',
+                  '1. Ketik Pilih Fail Sandaran.'
                 )}
               </Text>
               <Text style={styles.importStepText}>
                 {getText(
-                  '2. Download/save the file if WhatsApp asks you to.',
-                  '2. 如果 WhatsApp 提示，请先下载/保存文件。',
-                  '2. Muat turun/simpan fail jika diminta oleh WhatsApp.'
+                  '2. Select the JomHealthy_Backup_xxx.json file.',
+                  '2. 选择 JomHealthy_Backup_xxx.json 文件。',
+                  '2. Pilih fail JomHealthy_Backup_xxx.json.'
                 )}
               </Text>
               <Text style={styles.importStepText}>
                 {getText(
-                  '3. Come back here and tap Choose Backup File.',
-                  '3. 回到这里，点击选择备份文件。',
-                  '3. Kembali ke sini dan ketik Pilih Fail Sandaran.'
+                  '3. After import, the profile will refresh automatically.',
+                  '3. 导入后档案会自动刷新。',
+                  '3. Selepas import, profil akan dikemas kini secara automatik.'
                 )}
               </Text>
             </View>
 
-            <Pressable style={styles.whatsAppButton} onPress={openWhatsApp}>
-              <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />
-              <Text style={styles.whatsAppButtonText}>
-                {getText('Open WhatsApp', '打开 WhatsApp', 'Buka WhatsApp')}
-              </Text>
-            </Pressable>
 
             <Pressable
               style={styles.chooseFileButton}
@@ -753,9 +856,9 @@ export default function ProfileScreen() {
 
             <Text style={styles.importNote}>
               {getText(
-                'For security reasons, JomHealthy cannot directly read WhatsApp chats. Please choose the backup file after saving/downloading it.',
-                '出于安全原因，JomHealthy 不能直接读取 WhatsApp 聊天。请先保存/下载备份文件后再选择导入。',
-                'Atas sebab keselamatan, JomHealthy tidak boleh membaca chat WhatsApp secara terus. Sila pilih fail sandaran selepas disimpan/dimuat turun.'
+                'Only JSON backup files exported by JomHealthy can be imported.',
+                '只能导入由 JomHealthy 导出的 JSON 备份文件。',
+                'Hanya fail sandaran JSON yang dieksport oleh JomHealthy boleh diimport.'
               )}
             </Text>
           </View>
