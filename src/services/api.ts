@@ -115,3 +115,29 @@ export async function searchMeals(keyword: string) {
     },
   });
 }
+
+export async function generateMealPlanByAi(params: {
+  childName?: string;
+  age?: number;
+  gender?: 'boy' | 'girl';
+  heightCm?: number;
+  weightKg?: number;
+  allergies?: string[];
+  restrictions?: any;
+  targetCarbs?: number;
+  targetProtein?: number;
+  targetFat?: number;
+  days?: number;
+  mealPreference?: string;
+}) {
+  const url = `${API_BASE_URL}/meal/generatePlan`;
+
+  return safeFetchJson<any>(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+}

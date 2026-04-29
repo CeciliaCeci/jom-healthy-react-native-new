@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -8,10 +9,10 @@ import {
   Text,
   TextInput,
   View,
-  Image, //Health Insights, JJ
-  Modal, //Health Insights, JJ
+  Image,
+  Modal,
   Linking,
-  TouchableOpacity, //Health Insights, JJ
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -31,20 +32,327 @@ import {
 import ChildAvatar from '../components/ChildAvatar';
 import DigitalTwin from '../components/DigitalTwin';
 import LanguageModal from '../components/LanguageModal';
-import MealPlanDurationModal from '../components/MealPlanDurationModal';
 import AddChildModal from '../components/AddChildModal';
 import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
-// Use for Markdown format of Health Insights, JJ
 import Markdown from 'react-native-markdown-display';
-// Use for details of each type of health insights, JJ
 import { FileText, X, ExternalLink } from 'lucide-react-native';
+import { generateMealPlanByAi } from '../services/api';
 
 type FoodSuggestion = {
   label: string;
   query: string;
 };
 
+type Ingredient = {
+  ingredientId?: number;
+  mealId?: string;
+  ingredientOrder?: number;
+  ingredientName?: string;
+  measure?: string;
+  normalizedName?: string;
+  gramsEstimated?: number;
+  foodNameEn?: string;
+  foodNameCn?: string;
+  foodNameMs?: string;
+  foodGroup?: string;
+  energyKcal?: number;
+  proteinG?: number;
+  carbohydrateG?: number;
+  fatG?: number;
+};
+
+type MealRecipe = {
+  id?: number;
+  idMeal: string;
+  strMeal: string;
+  strMealAlternate?: string | null;
+  strCategory?: string | null;
+  strArea?: string | null;
+  strInstructions?: string | null;
+  strMealThumb?: string | null;
+  strTags?: string | null;
+  strYoutube?: string | null;
+  strSource?: string | null;
+  totalEnergyKcal?: number;
+  totalProteinG?: number;
+  totalCarbohydrateG?: number;
+  totalFatG?: number;
+  ingredients?: Ingredient[];
+  [key: string]: any;
+};
+
+type MealSlotKey = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
+
+type MealPlanForDay = Partial<Record<MealSlotKey, MealRecipe>>;
+
+type ShoppingCategory = 'vegetables' | 'protein' | 'carbs' | 'others';
+
+type ShoppingItem = {
+  id: string;
+  name: string;
+  quantity: string;
+  category: ShoppingCategory;
+  source: string;
+  mealId: string;
+  checked: boolean;
+};
+
 const BASE_URL = 'https://jom-healthy-java.onrender.com';
+const MEAL_PLANS_STORAGE_KEY = 'JOMHEALTHY_MEAL_PLANS_BY_OWNER_V1';
+const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_SHOPPING_LIST_BY_OWNER_V1';
+
+const SLOT_ORDER: MealSlotKey[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
+const DEFAULT_TARGETS = {
+  carbs: 155,
+  protein: 32,
+  fat: 28,
+};
+
+function formatDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, offset: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + offset);
+  return next;
+}
+
+function safeNumber(value: any) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function isValidImageUrl(url?: string | null) {
+  if (!url) return false;
+
+  const lower = url.toLowerCase();
+
+  if (!lower.startsWith('https://')) return false;
+  if (lower.includes('example.com')) return false;
+  if (lower.includes('placeholder')) return false;
+  if (lower.includes('chicken-rice.jpg')) return false;
+
+  return (
+    lower.includes('.jpg') ||
+    lower.includes('.jpeg') ||
+    lower.includes('.png') ||
+    lower.includes('.webp')
+  );
+}
+
+function isValidYoutubeUrl(url?: string | null) {
+  if (!url) return false;
+
+  const lower = url.toLowerCase();
+
+  if (!lower.startsWith('https://')) return false;
+  if (lower.includes('example')) return false;
+
+  return (
+    lower.includes('youtube.com/watch') ||
+    lower.includes('youtu.be/') ||
+    lower.includes('youtube.com/results?search_query=')
+  );
+}
+
+function normalizeAiMeal(meal: any): MealRecipe {
+  const rawImageUrl = meal?.strMealThumb || meal?.imageUrl || '';
+  const rawYoutubeUrl = meal?.strYoutube || meal?.youtubeUrl || '';
+
+  return {
+    idMeal:
+      meal?.idMeal ||
+      `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    strMeal: meal?.strMeal || meal?.name || 'AI Recommended Meal',
+    strCategory: meal?.strCategory || meal?.category || 'AI Meal',
+    strArea: meal?.strArea || meal?.area || 'Healthy',
+    strInstructions: meal?.strInstructions || meal?.instructions || '',
+    strMealThumb: isValidImageUrl(rawImageUrl) ? rawImageUrl : null,
+    strYoutube: isValidYoutubeUrl(rawYoutubeUrl) ? rawYoutubeUrl : null,
+    totalEnergyKcal: safeNumber(meal?.totalEnergyKcal || meal?.calories),
+    totalProteinG: safeNumber(meal?.totalProteinG || meal?.protein),
+    totalCarbohydrateG: safeNumber(
+      meal?.totalCarbohydrateG || meal?.carbs || meal?.carbohydrate
+    ),
+    totalFatG: safeNumber(meal?.totalFatG || meal?.fat),
+    ingredients: Array.isArray(meal?.ingredients)
+      ? meal.ingredients.map((item: any, index: number) => ({
+          ingredientId: item.ingredientId || index + 1,
+          ingredientOrder: item.ingredientOrder || index + 1,
+          ingredientName:
+            item.ingredientName || item.name || item.foodNameEn || 'Ingredient',
+          measure: item.measure || item.quantity || '',
+          normalizedName:
+            item.normalizedName || item.name || item.ingredientName || '',
+          gramsEstimated: safeNumber(item.gramsEstimated || item.grams),
+          foodNameEn: item.foodNameEn || item.name || item.ingredientName || '',
+          foodNameCn: item.foodNameCn || '',
+          foodNameMs: item.foodNameMs || '',
+          foodGroup: item.foodGroup || 'others',
+          energyKcal: safeNumber(item.energyKcal),
+          proteinG: safeNumber(item.proteinG),
+          carbohydrateG: safeNumber(item.carbohydrateG),
+          fatG: safeNumber(item.fatG),
+        }))
+      : [],
+  };
+}
+
+function normalizeIngredientName(item: any) {
+  return String(
+    item.foodNameEn ||
+      item.ingredientName ||
+      item.normalizedName ||
+      'Ingredient'
+  ).trim();
+}
+
+function normalizeIngredientQuantity(item: any) {
+  if (item.measure) return String(item.measure);
+
+  if (item.gramsEstimated !== undefined && item.gramsEstimated !== null) {
+    return `${item.gramsEstimated}g`;
+  }
+
+  return '';
+}
+
+function classifyIngredientCategory(item: any): ShoppingCategory {
+  const name = String(
+    item.foodNameEn || item.ingredientName || item.normalizedName || ''
+  ).toLowerCase();
+
+  const group = String(item.foodGroup || '').toLowerCase();
+
+  if (
+    group.includes('vegetable') ||
+    name.includes('vegetable') ||
+    name.includes('spinach') ||
+    name.includes('lettuce') ||
+    name.includes('cucumber') ||
+    name.includes('tomato') ||
+    name.includes('onion') ||
+    name.includes('carrot') ||
+    name.includes('broccoli') ||
+    name.includes('cabbage')
+  ) {
+    return 'vegetables';
+  }
+
+  if (
+    group.includes('meat') ||
+    group.includes('fish') ||
+    group.includes('seafood') ||
+    group.includes('egg') ||
+    name.includes('egg') ||
+    name.includes('chicken') ||
+    name.includes('beef') ||
+    name.includes('fish') ||
+    name.includes('tofu') ||
+    name.includes('lentil') ||
+    name.includes('bean') ||
+    name.includes('prawn') ||
+    name.includes('shrimp')
+  ) {
+    return 'protein';
+  }
+
+  if (
+    group.includes('cereal') ||
+    group.includes('grain') ||
+    group.includes('fruit') ||
+    name.includes('rice') ||
+    name.includes('bread') ||
+    name.includes('pasta') ||
+    name.includes('noodle') ||
+    name.includes('flour') ||
+    name.includes('potato') ||
+    name.includes('banana') ||
+    name.includes('oat')
+  ) {
+    return 'carbs';
+  }
+
+  return 'others';
+}
+
+async function generateShoppingListByOwner(
+  allMealPlans: Record<string, Record<string, MealPlanForDay>>
+) {
+  try {
+    const oldRaw = await AsyncStorage.getItem(SHOPPING_LIST_STORAGE_KEY);
+    const oldByOwner: Record<string, ShoppingItem[]> = oldRaw
+      ? JSON.parse(oldRaw)
+      : {};
+
+    const nextByOwner: Record<string, ShoppingItem[]> = {};
+
+    Object.entries(allMealPlans).forEach(([ownerKey, mealPlans]) => {
+      const oldItems = oldByOwner[ownerKey] || [];
+      const checkedMap = new Map<string, boolean>();
+
+      oldItems.forEach((item) => {
+        checkedMap.set(item.id, item.checked);
+      });
+
+      const mergedMap = new Map<string, ShoppingItem>();
+
+      Object.entries(mealPlans).forEach(([dateKey, dayPlan]) => {
+        SLOT_ORDER.forEach((slot) => {
+          const meal = dayPlan?.[slot];
+
+          if (!meal || !Array.isArray(meal.ingredients)) return;
+
+          meal.ingredients.forEach((ingredient: any) => {
+            const name = normalizeIngredientName(ingredient);
+            const quantity = normalizeIngredientQuantity(ingredient);
+            const category = classifyIngredientCategory(ingredient);
+            const id = `${name.toLowerCase()}-${category}`.replace(/\s+/g, '-');
+
+            const existing = mergedMap.get(id);
+
+            if (existing) {
+              existing.quantity = [existing.quantity, quantity]
+                .filter(Boolean)
+                .join(' + ');
+
+              if (!existing.source.includes(meal.strMeal)) {
+                existing.source += `, ${dateKey} · ${slot}: ${meal.strMeal}`;
+              }
+
+              return;
+            }
+
+            mergedMap.set(id, {
+              id,
+              name,
+              quantity,
+              category,
+              source: `${dateKey} · ${slot}: ${meal.strMeal}`,
+              mealId: meal.idMeal,
+              checked: checkedMap.get(id) || false,
+            });
+          });
+        });
+      });
+
+      nextByOwner[ownerKey] = Array.from(mergedMap.values());
+    });
+
+    await AsyncStorage.setItem(
+      SHOPPING_LIST_STORAGE_KEY,
+      JSON.stringify(nextByOwner)
+    );
+  } catch (error) {
+    console.log('Generate shopping list failed:', error);
+  }
+}
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -54,11 +362,13 @@ export default function HomeScreen() {
     activeChild,
     switchToChild,
     nutritionProgress,
+    nutritionNeeds,
     getTip,
+    getOwnerKey,
   } = useChildProfile();
 
   const [showLanguage, setShowLanguage] = useState(false);
-  const [showDuration, setShowDuration] = useState(false);
+  const [showAiMealPlan, setShowAiMealPlan] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
   const [showChildren, setShowChildren] = useState(false);
 
@@ -73,6 +383,11 @@ export default function HomeScreen() {
   const [topicsLoading, setTopicsLoading] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState<any>(null);
   const [showTopicModal, setShowTopicModal] = useState(false);
+
+  const [aiMealPrompt, setAiMealPrompt] = useState('');
+  const [aiMealDays, setAiMealDays] = useState(1);
+  const [aiMealGenerating, setAiMealGenerating] = useState(false);
+  const [aiMealGenerateError, setAiMealGenerateError] = useState('');
 
   const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
 
@@ -110,7 +425,7 @@ export default function HomeScreen() {
           setAllTopics(data);
         }
       } catch (error) {
-        console.error("Topics Fetch Error:", error);
+        console.error('Topics Fetch Error:', error);
       } finally {
         setTopicsLoading(false);
       }
@@ -194,9 +509,6 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, [searchText, language]);
 
-  // ==========================================
-  // 3. 辅助函数与变量计算
-  // ==========================================
   const reportTopics = allTopics.filter(t => t.category === 'REPORT');
   const dietTopics = allTopics.filter(t => t.category === 'DIET');
   const sportTopics = allTopics.filter(t => t.category === 'SPORT');
@@ -232,7 +544,120 @@ export default function HomeScreen() {
       source: 'search',
     });
   };
-  
+
+  const openAiMealPlanModal = () => {
+    setAiMealGenerateError('');
+    setShowAiMealPlan(true);
+  };
+
+  const closeAiMealPlanModal = () => {
+    if (aiMealGenerating) return;
+    setShowAiMealPlan(false);
+  };
+
+  const generateAiMealPlanFromHome = async () => {
+    if (aiMealGenerating) return;
+
+    setAiMealGenerating(true);
+    setAiMealGenerateError('');
+
+    const ownerKey = getOwnerKey ? getOwnerKey() : 'guest';
+
+    const currentTargets = {
+      carbs: nutritionNeeds?.carbs || DEFAULT_TARGETS.carbs,
+      protein: nutritionNeeds?.protein || DEFAULT_TARGETS.protein,
+      fat: nutritionNeeds?.fat || DEFAULT_TARGETS.fat,
+    };
+
+    try {
+      const raw = await AsyncStorage.getItem(MEAL_PLANS_STORAGE_KEY);
+      const allMealPlans: Record<string, Record<string, MealPlanForDay>> = raw
+        ? JSON.parse(raw)
+        : {};
+
+      const ownerPlans = allMealPlans[ownerKey] || {};
+      const today = new Date();
+
+      for (let i = 0; i < aiMealDays; i += 1) {
+        const targetDate = addDays(today, i);
+        const dateKey = formatDateKey(targetDate);
+
+        const result = await generateMealPlanByAi({
+          childName: activeChild?.nickname || 'Guest',
+          age: activeChild?.age || 7,
+          gender: activeChild?.gender || 'boy',
+          heightCm: activeChild?.height || 120,
+          weightKg: activeChild?.weight || 20,
+          allergies: activeChild?.allergies || [],
+          restrictions: activeChild?.restrictions || {},
+          targetCarbs: currentTargets.carbs,
+          targetProtein: currentTargets.protein,
+          targetFat: currentTargets.fat,
+          days: 1,
+          mealPreference: aiMealPrompt.trim()
+            ? `${aiMealPrompt.trim()} for day ${i + 1}`
+            : '',
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || 'Failed to generate meal plan.');
+        }
+
+        const data = result.data?.data || result.data || {};
+        const plan = data.plan || data.mealPlan || data;
+
+        const nextDayPlan: MealPlanForDay = {};
+
+        if (plan.breakfast) {
+          nextDayPlan.Breakfast = normalizeAiMeal(plan.breakfast);
+        }
+
+        if (plan.lunch) {
+          nextDayPlan.Lunch = normalizeAiMeal(plan.lunch);
+        }
+
+        if (plan.dinner) {
+          nextDayPlan.Dinner = normalizeAiMeal(plan.dinner);
+        }
+
+        if (plan.snack) {
+          nextDayPlan.Snack = normalizeAiMeal(plan.snack);
+        }
+
+        const hasAnyMeal = SLOT_ORDER.some((slot) => !!nextDayPlan[slot]);
+
+        if (!hasAnyMeal) {
+          throw new Error('AI did not return a valid meal plan.');
+        }
+
+        ownerPlans[dateKey] = nextDayPlan;
+      }
+
+      allMealPlans[ownerKey] = ownerPlans;
+
+      await AsyncStorage.setItem(
+        MEAL_PLANS_STORAGE_KEY,
+        JSON.stringify(allMealPlans)
+      );
+
+      await generateShoppingListByOwner(allMealPlans);
+
+      setShowAiMealPlan(false);
+      navigation.navigate('Meal');
+    } catch (error: any) {
+      console.log('Home AI meal plan failed:', error);
+      setAiMealGenerateError(
+        error?.message ||
+          getText(
+            'Network error. Please try again.',
+            '网络错误，请稍后再试。',
+            'Ralat rangkaian. Cuba lagi.'
+          )
+      );
+    } finally {
+      setAiMealGenerating(false);
+    }
+  };
 
   return (
     <>
@@ -458,12 +883,10 @@ export default function HomeScreen() {
                 <View style={styles.profileActions}>
                   <Pressable
                     style={styles.mealPlanButton}
-                    onPress={() => setShowDuration(true)}
+                    onPress={openAiMealPlanModal}
                   >
-                    <Ionicons name="calendar" size={16} color="#FFFFFF" />
-                    <Text style={styles.mealPlanButtonText}>
-                      {t('mealPlan')}
-                    </Text>
+                    <Ionicons name="sparkles" size={16} color="#FFFFFF" />
+                    <Text style={styles.mealPlanButtonText}>AI Meal Plan</Text>
                   </Pressable>
 
                   <Pressable
@@ -530,11 +953,11 @@ export default function HomeScreen() {
             </Text>
           </Pressable>
 
-          {/* Health Insights */} // JJ: Recovered
+          {/* Health Insights - JJ Recovered */}
           <SectionTitle title={t('Health Insights')} />
 
           {topicsLoading ? (
-             <ActivityIndicator size="small" color={colors.primaryDark} style={{ paddingVertical: 20 }} />
+            <ActivityIndicator size="small" color={colors.primaryDark} style={{ paddingVertical: 20 }} />
           ) : (
             <ScrollView
               horizontal
@@ -542,29 +965,26 @@ export default function HomeScreen() {
               contentContainerStyle={styles.displayTopicsScroll}
             >
               {displayTopics.map((topic) => (
-                <Pressable 
-                  key={topic.id || topic.title} 
+                <Pressable
+                  key={topic.id || topic.title}
                   style={styles.topicCard}
                   onPress={() => {
                     setSelectedTopic(topic);
                     setShowTopicModal(true);
                   }}
                 >
-                  {/* 1. 悬浮的黑色半透明标签 (保留旧版设计) */}
                   <View style={styles.topicCategoryBadge}>
                     <Text style={styles.topicCategoryText}>
-                      {topic?.category || "INSIGHT"}
+                      {topic?.category || 'INSIGHT'}
                     </Text>
                   </View>
 
-                  {/* 2. 封面大图 (保留旧版设计) */}
-                  <Image 
-                    source={{ uri: topic.imageUrl }} 
-                    style={styles.topicImage} 
-                    resizeMode="cover" 
+                  <Image
+                    source={{ uri: topic.imageUrl }}
+                    style={styles.topicImage}
+                    resizeMode="cover"
                   />
 
-                  {/* 3. 底部文字区 (保留旧版设计) */}
                   <View style={styles.topicTextContainer}>
                     <Text style={styles.topicTitle} numberOfLines={2}>
                       {topic.title}
@@ -580,41 +1000,159 @@ export default function HomeScreen() {
         </View>
       </Screen>
 
+      <Modal visible={showAiMealPlan} transparent animationType="fade" onRequestClose={closeAiMealPlanModal}>
+        <View style={styles.aiModalOverlay}>
+          <View style={styles.aiModalContent}>
+            <View style={styles.aiModalHeader}>
+              <View style={styles.aiModalIconBox}>
+                <Ionicons name="sparkles" size={22} color="#FFFFFF" />
+              </View>
+
+              <View style={styles.aiModalTitleWrap}>
+                <Text style={styles.aiModalTitle}>AI Meal Plan</Text>
+                <Text style={styles.aiModalSubtitle}>
+                  Generate meals and shopping list automatically
+                </Text>
+              </View>
+
+              <Pressable style={styles.aiModalCloseButton} onPress={closeAiMealPlanModal} disabled={aiMealGenerating}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.aiModalBody}>
+              <Text style={styles.aiModalLabel}>What do you want to eat?</Text>
+
+              <View style={styles.aiPromptBox}>
+                <Ionicons name="fast-food-outline" size={18} color={colors.primaryDark} />
+                <TextInput
+                  value={aiMealPrompt}
+                  onChangeText={setAiMealPrompt}
+                  placeholder="e.g. chicken rice, egg, banana"
+                  placeholderTextColor="#94A3B8"
+                  style={styles.aiPromptInput}
+                  multiline
+                  editable={!aiMealGenerating}
+                />
+                {aiMealPrompt.length > 0 && !aiMealGenerating && (
+                  <Pressable onPress={() => setAiMealPrompt('')}>
+                    <Ionicons name="close-circle" size={20} color="#94A3B8" />
+                  </Pressable>
+                )}
+              </View>
+
+              <Text style={styles.aiModalHint}>
+                Leave blank to recommend by child profile.
+              </Text>
+
+              <Text style={styles.aiModalLabel}>How many days?</Text>
+
+              <View style={styles.daySelectorRow}>
+                {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+                  <Pressable
+                    key={day}
+                    style={[
+                      styles.dayChip,
+                      aiMealDays === day && styles.dayChipActive,
+                    ]}
+                    onPress={() => setAiMealDays(day)}
+                    disabled={aiMealGenerating}
+                  >
+                    <Text
+                      style={[
+                        styles.dayChipText,
+                        aiMealDays === day && styles.dayChipTextActive,
+                      ]}
+                    >
+                      {day}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <View style={styles.aiInfoCard}>
+                <Ionicons name="cart-outline" size={18} color={colors.primaryDark} />
+                <Text style={styles.aiInfoText}>
+                  Ingredients will be saved to Shopping automatically.
+                </Text>
+              </View>
+
+              {!!aiMealGenerateError && (
+                <Text style={styles.aiMealPlanError}>{aiMealGenerateError}</Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.aiModalFooter}>
+              <Pressable
+                style={[
+                  styles.generateMealPlanButton,
+                  aiMealGenerating && styles.generateMealPlanButtonLoading,
+                ]}
+                onPress={generateAiMealPlanFromHome}
+                disabled={aiMealGenerating}
+              >
+                {aiMealGenerating ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.generateMealPlanButtonText}>
+                      Generating {aiMealDays} day{aiMealDays > 1 ? 's' : ''}...
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                    <Text style={styles.generateMealPlanButtonText}>
+                      Generate Meal Plan
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={styles.viewMealPageButton}
+                onPress={() => {
+                  setShowAiMealPlan(false);
+                  navigation.navigate('Meal');
+                }}
+                disabled={aiMealGenerating}
+              >
+                <Text style={styles.viewMealPageButtonText}>Go to Meal Page</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showTopicModal} transparent animationType="fade">
-        {/* 1. Change to modalOverlay */}
         <View style={styles.modalOverlay}>
           {selectedTopic && (
             <View style={styles.modalContent}>
-              
-              {/* 3. Change the top image area style */}
               <View style={styles.modalImageWrap}>
                 <Image source={{ uri: selectedTopic.imageUrl }} style={styles.modalImage} resizeMode="cover" />
                 <TouchableOpacity onPress={() => setShowTopicModal(false)} style={styles.modalCloseBtn}>
                   <X color="#FFFFFF" size={20} />
                 </TouchableOpacity>
               </View>
-              
-              {/* 4. Change the article scroll area style */}
+
               <ScrollView contentContainerStyle={styles.modalBody}>
                 <View style={styles.modalTagRow}>
                   <FileText color={colors.primaryDark} size={18} />
                   <Text style={styles.modalTagText}>Health Insights</Text>
                 </View>
-                
+
                 <Text style={styles.modalTitle}>{selectedTopic.title}</Text>
-                
+
                 <Markdown
                   style={{
                     body: { color: '#475569', fontSize: 16, lineHeight: 24 },
                     strong: { fontWeight: 'bold', color: '#2F3A3A' },
-                    ordered_list_icon: { color: colors.primaryDark, fontWeight: 'bold' }
+                    ordered_list_icon: { color: colors.primaryDark, fontWeight: 'bold' },
                   }}
                 >
                   {selectedTopic.content}
                 </Markdown>
               </ScrollView>
-              
-              {/* 5. Change the bottom button style */}
+
               {selectedTopic.sourceUrl && (
                 <View style={styles.modalFooter}>
                   <TouchableOpacity onPress={() => Linking.openURL(selectedTopic.sourceUrl)} style={styles.modalActionBtn}>
@@ -631,12 +1169,6 @@ export default function HomeScreen() {
       <LanguageModal
         visible={showLanguage}
         onClose={() => setShowLanguage(false)}
-      />
-
-      <MealPlanDurationModal
-        visible={showDuration}
-        onClose={() => setShowDuration(false)}
-        onSelect={() => navigation.navigate('Meal')}
       />
 
       <AddChildModal
@@ -934,19 +1466,209 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
- displayTopicsScroll: {
-    paddingBottom: 8,
-    gap: 16, // 旧版 UI 的间距
+  aiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    justifyContent: 'flex-end',
   },
-  
-  // Start, Recover the old structure of health insight.
-  topicCard: {
-    width: 256, // 对应旧版 w-64
+
+  aiModalContent: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24, // 对应旧版 rounded-3xl
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    maxHeight: '86%',
+    overflow: 'hidden',
+  },
+
+  aiModalHeader: {
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+
+  aiModalIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  aiModalTitleWrap: {
+    flex: 1,
+  },
+
+  aiModalTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+
+  aiModalSubtitle: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  aiModalCloseButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  aiModalBody: {
+    padding: 20,
+  },
+
+  aiModalLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+
+  aiPromptBox: {
+    minHeight: 56,
+    borderRadius: 18,
+    backgroundColor: '#F4F6F4',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  aiPromptInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    maxHeight: 90,
+  },
+
+  aiModalHint: {
+    marginTop: 8,
+    marginBottom: 18,
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  daySelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 18,
+  },
+
+  dayChip: {
+    flex: 1,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  dayChipActive: {
+    backgroundColor: colors.primaryDark,
+  },
+
+  dayChipText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  dayChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  aiInfoCard: {
+    borderRadius: 18,
+    backgroundColor: '#EAF7F0',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  aiInfoText: {
+    flex: 1,
+    color: colors.primaryDark,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 19,
+  },
+
+  aiMealPlanError: {
+    marginTop: 12,
+    color: '#B91C1C',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  aiModalFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    gap: 10,
+  },
+
+  generateMealPlanButton: {
+    height: 50,
+    borderRadius: 20,
+    backgroundColor: colors.primaryDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  generateMealPlanButtonLoading: {
+    opacity: 0.85,
+  },
+
+  generateMealPlanButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  viewMealPageButton: {
+    height: 46,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  viewMealPageButtonText: {
+    color: colors.primaryDark,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  displayTopicsScroll: {
+    paddingBottom: 8,
+    gap: 16,
+  },
+
+  topicCard: {
+    width: 256,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#F3F4F6', // 对应旧版 border-gray-100
+    borderColor: '#F3F4F6',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -962,7 +1684,7 @@ const styles = StyleSheet.create({
     top: 12,
     left: 12,
     zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.5)', // 对应 bg-black/50
+    backgroundColor: 'rgba(0,0,0,0.5)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -977,7 +1699,7 @@ const styles = StyleSheet.create({
 
   topicImage: {
     width: '100%',
-    height: 160, // 对应旧版 h-40
+    height: 160,
   },
 
   topicTextContainer: {
@@ -996,32 +1718,32 @@ const styles = StyleSheet.create({
     color: '#7A8A8A',
   },
 
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.6)', 
-    justifyContent: 'center', 
-    paddingHorizontal: 24 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
 
-  modalContent: { 
-    width: '100%', 
-    backgroundColor: '#FFFFFF', 
-    borderRadius: 24, 
-    overflow: 'hidden', 
-    maxHeight: '85%' 
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    overflow: 'hidden',
+    maxHeight: '85%',
   },
 
   modalImageWrap: { width: '100%', height: 180, position: 'relative' },
 
   modalImage: { width: '100%', height: '100%' },
 
-  modalCloseBtn: { 
-    position: 'absolute', 
-    top: 16, 
-    right: 16, 
-    backgroundColor: 'rgba(0,0,0,0.4)', 
-    padding: 8, 
-    borderRadius: 24 
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    padding: 8,
+    borderRadius: 24,
   },
 
   modalBody: { padding: 24 },
@@ -1034,20 +1756,19 @@ const styles = StyleSheet.create({
 
   modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#F3F4F6', backgroundColor: '#F9FAFB' },
 
-  modalActionBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8, 
-    backgroundColor: 'white', 
-    paddingVertical: 14, 
-    borderRadius: 16, 
-    borderWidth: 1, 
-    borderColor: '#E5E7EB' 
+  modalActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'white',
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
 
   modalActionText: { color: '#3B82F6', fontWeight: 'bold', fontSize: 16 },
-  // End, Recovery of the old design of health insights, JJ
 
   nutritionIconBox: {
     backgroundColor: '#E8F5E9',

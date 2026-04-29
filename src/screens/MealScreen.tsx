@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Header, Screen } from '../components/Common';
 import { colors } from '../theme/colors';
-import { searchMeals } from '../services/api';
+import { generateMealPlanByAi, searchMeals } from '../services/api';
 import { useChildProfile } from '../context/ChildProfileContext';
 
 type Ingredient = {
@@ -129,14 +129,6 @@ function getMonthDays(monthDate: Date) {
   const month = monthDate.getMonth();
 
   const firstDay = new Date(year, month, 1);
-
-  /**
-   * JS getDay():
-   * Sunday = 0, Monday = 1, Tuesday = 2, ... Saturday = 6
-   *
-   * Calendar should start from Monday:
-   * Monday = 0, Tuesday = 1, ... Sunday = 6
-   */
   const mondayBasedWeekDay = (firstDay.getDay() + 6) % 7;
   const startDate = addDays(firstDay, -mondayBasedWeekDay);
 
@@ -298,6 +290,39 @@ function classifyIngredientCategory(item: any): ShoppingCategory {
   }
 
   return 'others';
+}
+
+function isValidImageUrl(url?: string | null) {
+  if (!url) return false;
+
+  const lower = url.toLowerCase();
+
+  if (!lower.startsWith('https://')) return false;
+  if (lower.includes('example.com')) return false;
+  if (lower.includes('placeholder')) return false;
+  if (lower.includes('chicken-rice.jpg')) return false;
+
+  return (
+    lower.includes('.jpg') ||
+    lower.includes('.jpeg') ||
+    lower.includes('.png') ||
+    lower.includes('.webp')
+  );
+}
+
+function isValidYoutubeUrl(url?: string | null) {
+  if (!url) return false;
+
+  const lower = url.toLowerCase();
+
+  if (!lower.startsWith('https://')) return false;
+  if (lower.includes('example')) return false;
+
+  return (
+    lower.includes('youtube.com/watch') ||
+    lower.includes('youtu.be/') ||
+    lower.includes('youtube.com/results?search_query=')
+  );
 }
 
 async function generateShoppingListByOwner(
@@ -533,11 +558,9 @@ function CalendarDateCell({
 
 export default function MealScreen() {
   const navigation = useNavigation<any>();
-
   const { activeChild, getOwnerKey, nutritionNeeds } = useChildProfile();
 
   const ownerKey = getOwnerKey();
-
   const today = useMemo(() => new Date(), []);
 
   const [selectedDate, setSelectedDate] = useState(today);
@@ -549,6 +572,10 @@ export default function MealScreen() {
   const [searchError, setSearchError] = useState('');
   const [suggestions, setSuggestions] = useState<MealRecipe[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const [mealPreference, setMealPreference] = useState('');
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [generateError, setGenerateError] = useState('');
 
   const [allMealPlans, setAllMealPlans] = useState<
     Record<string, Record<string, MealPlanForDay>>
@@ -674,6 +701,116 @@ export default function MealScreen() {
         [ownerKey]: updater(currentOwnerPlans),
       };
     });
+  };
+
+  const normalizeAiMeal = (meal: any): MealRecipe => {
+    const rawImageUrl = meal?.strMealThumb || meal?.imageUrl || '';
+    const rawYoutubeUrl = meal?.strYoutube || meal?.youtubeUrl || '';
+
+    return {
+      idMeal:
+        meal?.idMeal ||
+        `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      strMeal: meal?.strMeal || meal?.name || 'AI Recommended Meal',
+      strCategory: meal?.strCategory || meal?.category || 'AI Meal',
+      strArea: meal?.strArea || meal?.area || 'Healthy',
+      strInstructions: meal?.strInstructions || meal?.instructions || '',
+      strMealThumb: isValidImageUrl(rawImageUrl) ? rawImageUrl : null,
+      strYoutube: isValidYoutubeUrl(rawYoutubeUrl) ? rawYoutubeUrl : null,
+      totalEnergyKcal: Number(meal?.totalEnergyKcal || meal?.calories || 0),
+      totalProteinG: Number(meal?.totalProteinG || meal?.protein || 0),
+      totalCarbohydrateG: Number(
+        meal?.totalCarbohydrateG || meal?.carbs || meal?.carbohydrate || 0
+      ),
+      totalFatG: Number(meal?.totalFatG || meal?.fat || 0),
+      ingredients: Array.isArray(meal?.ingredients)
+        ? meal.ingredients.map((item: any, index: number) => ({
+            ingredientId: item.ingredientId || index + 1,
+            ingredientOrder: item.ingredientOrder || index + 1,
+            ingredientName:
+              item.ingredientName || item.name || item.foodNameEn || 'Ingredient',
+            measure: item.measure || item.quantity || '',
+            normalizedName:
+              item.normalizedName || item.name || item.ingredientName || '',
+            gramsEstimated: Number(item.gramsEstimated || item.grams || 0),
+            foodNameEn: item.foodNameEn || item.name || item.ingredientName || '',
+            foodNameCn: item.foodNameCn || '',
+            foodNameMs: item.foodNameMs || '',
+            foodGroup: item.foodGroup || 'others',
+            energyKcal: Number(item.energyKcal || 0),
+            proteinG: Number(item.proteinG || 0),
+            carbohydrateG: Number(item.carbohydrateG || 0),
+            fatG: Number(item.fatG || 0),
+          }))
+        : [],
+    };
+  };
+
+  const generateAiMealPlan = async () => {
+    if (generatingPlan) return;
+
+    setGeneratingPlan(true);
+    setGenerateError('');
+
+    try {
+      const result = await generateMealPlanByAi({
+        childName: activeChild?.nickname || 'Guest',
+        age: activeChild?.age || 7,
+        gender: activeChild?.gender || 'boy',
+        heightCm: activeChild?.height || 120,
+        weightKg: activeChild?.weight || 20,
+        allergies: activeChild?.allergies || [],
+        restrictions: activeChild?.restrictions || {},
+        targetCarbs: currentTargets.carbs,
+        targetProtein: currentTargets.protein,
+        targetFat: currentTargets.fat,
+        days: 1,
+        mealPreference: mealPreference.trim(),
+      });
+
+      if (!result.ok) {
+        setGenerateError(result.message || 'Failed to generate meal plan.');
+        return;
+      }
+
+      const data = result.data?.data || result.data || {};
+      const plan = data.plan || data.mealPlan || data;
+
+      const nextDayPlan: MealPlanForDay = {};
+
+      if (plan.breakfast) {
+        nextDayPlan.Breakfast = normalizeAiMeal(plan.breakfast);
+      }
+
+      if (plan.lunch) {
+        nextDayPlan.Lunch = normalizeAiMeal(plan.lunch);
+      }
+
+      if (plan.dinner) {
+        nextDayPlan.Dinner = normalizeAiMeal(plan.dinner);
+      }
+
+      if (plan.snack) {
+        nextDayPlan.Snack = normalizeAiMeal(plan.snack);
+      }
+
+      const hasAnyMeal = SLOT_ORDER.some((slot) => !!nextDayPlan[slot]);
+
+      if (!hasAnyMeal) {
+        setGenerateError('AI did not return a valid meal plan.');
+        return;
+      }
+
+      updateCurrentOwnerMealPlans((prev) => ({
+        ...prev,
+        [selectedKey]: nextDayPlan,
+      }));
+    } catch (error) {
+      console.log('Generate AI meal plan failed:', error);
+      setGenerateError('Network error. Please try again.');
+    } finally {
+      setGeneratingPlan(false);
+    }
   };
 
   const addMealToPlan = (meal: MealRecipe) => {
@@ -1117,11 +1254,43 @@ export default function MealScreen() {
 
         <View style={styles.planWrapper}>
           <View style={styles.planHeaderRow}>
-            <Text style={styles.planTitle}>Meal Plan</Text>
+            <View>
+              <Text style={styles.planTitle}>Meal Plan</Text>
+              <Text style={styles.aiHint}>
+                Leave blank to recommend by profile
+              </Text>
+            </View>
 
-            <Pressable style={styles.refreshButton} onPress={clearSelectedDayPlan}>
-              <Ionicons name="refresh" size={18} color="#64748B" />
+            <Pressable
+              style={[
+                styles.refreshButton,
+                generatingPlan && styles.refreshButtonGenerating,
+              ]}
+              onPress={generateAiMealPlan}
+              disabled={generatingPlan}
+            >
+              {generatingPlan ? (
+                <ActivityIndicator size="small" color={colors.primaryDark} />
+              ) : (
+                <Ionicons name="sparkles" size={18} color={colors.primaryDark} />
+              )}
             </Pressable>
+          </View>
+
+          <View style={styles.preferenceBox}>
+            <Ionicons name="fast-food-outline" size={18} color={colors.primaryDark} />
+            <TextInput
+              value={mealPreference}
+              onChangeText={setMealPreference}
+              placeholder="What do you want to eat? e.g. chicken rice"
+              placeholderTextColor="#94A3B8"
+              style={styles.preferenceInput}
+            />
+            {mealPreference.length > 0 && (
+              <Pressable onPress={() => setMealPreference('')}>
+                <Ionicons name="close-circle" size={20} color="#94A3B8" />
+              </Pressable>
+            )}
           </View>
 
           <Text style={styles.planShoppingText}>☑ View ingredients in Shopping</Text>
@@ -1132,7 +1301,16 @@ export default function MealScreen() {
             </Text>
           </View>
 
-          {SLOT_ORDER.some((slot) => !!selectedDayPlan[slot]) ? (
+          {generatingPlan ? (
+            <View style={styles.generatingCard}>
+              <ActivityIndicator size="large" color={colors.primaryDark} />
+              <Text style={styles.generatingTitle}>Generating your meal plan...</Text>
+              <Text style={styles.generatingText}>
+                AI is choosing suitable recipes based on the child profile,
+                nutrition targets and your food preference.
+              </Text>
+            </View>
+          ) : SLOT_ORDER.some((slot) => !!selectedDayPlan[slot]) ? (
             SLOT_ORDER.filter((slot) => !!selectedDayPlan[slot]).map((slot) =>
               renderMealCard(slot, selectedDayPlan[slot] as MealRecipe)
             )
@@ -1141,8 +1319,20 @@ export default function MealScreen() {
               <Text style={styles.emptyMealPlanEmoji}>🍽️</Text>
               <Text style={styles.emptyMealPlanTitle}>No meals added yet</Text>
               <Text style={styles.emptyMealPlanText}>
-                Type a recipe name above, then add a result to this day.
+                Tap the sparkle button to generate an AI meal plan, or search
+                recipes above.
               </Text>
+
+              <Pressable style={styles.generatePlanButton} onPress={generateAiMealPlan}>
+                <Ionicons name="sparkles" size={17} color="#FFFFFF" />
+                <Text style={styles.generatePlanButtonText}>
+                  Generate Meal Plan
+                </Text>
+              </Pressable>
+
+              {!!generateError && (
+                <Text style={styles.generateErrorText}>{generateError}</Text>
+              )}
             </View>
           )}
         </View>
@@ -1663,15 +1853,44 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
 
+  aiHint: {
+    marginTop: 3,
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+
   refreshButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#D1D5DB',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
+  },
+
+  refreshButtonGenerating: {
+    backgroundColor: '#EAF7F0',
+    borderColor: '#BBF7D0',
+  },
+
+  preferenceBox: {
+    marginTop: 14,
+    minHeight: 48,
+    borderRadius: 18,
+    backgroundColor: '#F4F6F4',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  preferenceInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
   },
 
   planShoppingText: {
@@ -1693,6 +1912,56 @@ const styles = StyleSheet.create({
     color: '#2E8B57',
     fontWeight: '700',
     fontSize: 14,
+  },
+
+  generatingCard: {
+    marginTop: 18,
+    borderRadius: 22,
+    backgroundColor: '#F8FAFC',
+    padding: 26,
+    alignItems: 'center',
+  },
+
+  generatingTitle: {
+    marginTop: 14,
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#1F2937',
+  },
+
+  generatingText: {
+    marginTop: 8,
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+
+  generatePlanButton: {
+    marginTop: 18,
+    height: 44,
+    borderRadius: 18,
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+
+  generatePlanButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  generateErrorText: {
+    marginTop: 12,
+    color: '#B91C1C',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 
   emptyMealPlanCard: {
@@ -2077,22 +2346,6 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-  },
-
-  legendTodayDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.primaryDark,
-    backgroundColor: '#FFFFFF',
-  },
-
-  legendSelectedDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.primaryDark,
   },
 
   calendarLegendText: {
