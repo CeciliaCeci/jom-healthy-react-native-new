@@ -62,6 +62,112 @@ function getBackupDirectory() {
   return backupDir;
 }
 
+
+function isValidImageUrl(url?: string | null) {
+  if (!url) return false;
+
+  const lower = String(url).toLowerCase().trim();
+
+  if (!lower.startsWith('https://') && !lower.startsWith('file://')) {
+    return false;
+  }
+
+  if (lower.includes('example.com')) return false;
+  if (lower.includes('placeholder')) return false;
+  if (lower.includes('chicken-rice.jpg')) return false;
+
+  return (
+    lower.includes('.jpg') ||
+    lower.includes('.jpeg') ||
+    lower.includes('.png') ||
+    lower.includes('.webp') ||
+    lower.startsWith('file://')
+  );
+}
+
+function guessMealEmoji(name?: string | null, category?: string | null) {
+  const text = `${name || ''} ${category || ''}`.toLowerCase();
+
+  if (text.includes('nasi lemak')) return '🍛';
+  if (text.includes('fried rice')) return '🍛';
+  if (
+    text.includes('rice') ||
+    text.includes('nasi') ||
+    text.includes('biryani') ||
+    text.includes('porridge') ||
+    text.includes('congee')
+  ) {
+    return '🍚';
+  }
+  if (
+    text.includes('noodle') ||
+    text.includes('mee') ||
+    text.includes('laksa') ||
+    text.includes('ramen') ||
+    text.includes('udon') ||
+    text.includes('pasta') ||
+    text.includes('spaghetti')
+  ) {
+    return '🍜';
+  }
+  if (text.includes('soup') || text.includes('stew') || text.includes('broth')) return '🍲';
+  if (text.includes('salad') || text.includes('vegetable') || text.includes('veggie')) return '🥗';
+  if (text.includes('sandwich') || text.includes('burger') || text.includes('toast')) return '🥪';
+  if (text.includes('bread') || text.includes('roti') || text.includes('bun')) return '🍞';
+  if (text.includes('pizza')) return '🍕';
+  if (text.includes('taco') || text.includes('wrap')) return '🌮';
+  if (text.includes('chicken') || text.includes('ayam')) return '🍗';
+  if (text.includes('beef') || text.includes('steak')) return '🥩';
+  if (text.includes('fish') || text.includes('salmon') || text.includes('tuna')) return '🐟';
+  if (text.includes('shrimp') || text.includes('prawn') || text.includes('seafood')) return '🦐';
+  if (text.includes('egg') || text.includes('omelette') || text.includes('omelet')) return '🥚';
+  if (text.includes('tofu') || text.includes('bean') || text.includes('lentil')) return '🫘';
+  if (text.includes('curry')) return '🍛';
+  if (text.includes('satay')) return '🍢';
+  if (text.includes('sushi')) return '🍣';
+  if (text.includes('dumpling')) return '🥟';
+  if (text.includes('potato') || text.includes('fries')) return '🥔';
+  if (text.includes('corn')) return '🌽';
+  if (text.includes('carrot')) return '🥕';
+  if (text.includes('broccoli')) return '🥦';
+  if (text.includes('tomato')) return '🍅';
+  if (text.includes('avocado')) return '🥑';
+  if (text.includes('banana')) return '🍌';
+  if (text.includes('apple')) return '🍎';
+  if (text.includes('orange')) return '🍊';
+  if (text.includes('mango')) return '🥭';
+  if (text.includes('strawberry') || text.includes('berry')) return '🍓';
+  if (text.includes('fruit')) return '🍎';
+  if (text.includes('yogurt') || text.includes('oat') || text.includes('cereal') || text.includes('granola')) return '🥣';
+  if (text.includes('milk') || text.includes('smoothie')) return '🥛';
+  if (text.includes('juice')) return '🧃';
+  if (text.includes('snack') || text.includes('cookie') || text.includes('biscuit')) return '🍪';
+
+  return '🍽️';
+}
+
+function getSavedRecipeImageUrl(recipe: any) {
+  const possibleUrl =
+    recipe?.imageUrl ||
+    recipe?.strMealThumb ||
+    recipe?.meal?.strMealThumb ||
+    recipe?.meal?.imageUrl ||
+    '';
+
+  return isValidImageUrl(possibleUrl) ? possibleUrl : null;
+}
+
+function getSavedRecipeEmoji(recipe: any) {
+  return (
+    recipe?.mealIconEmoji ||
+    recipe?.meal?.mealIconEmoji ||
+    guessMealEmoji(
+      recipe?.name || recipe?.strMeal || recipe?.meal?.strMeal,
+      recipe?.category || recipe?.strCategory || recipe?.meal?.strCategory
+    )
+  );
+}
+
 function normalizeBackupValue(value: any) {
   if (typeof value === 'string') {
     return value;
@@ -488,38 +594,45 @@ export default function ProfileScreen() {
               style={styles.savedScroll}
               contentContainerStyle={styles.savedScrollContent}
             >
-              {savedRecipes.map((recipe: any) => (
-                <Pressable
-                  key={recipe.id}
-                  onPress={() =>
-                    recipe.meal &&
-                    navigation.navigate('RecipeDetail', { meal: recipe.meal })
-                  }
-                  style={styles.recipeCard}
-                >
-                  {recipe.imageUrl ? (
-                    <Image
-                      source={{ uri: recipe.imageUrl }}
-                      style={styles.recipeImage}
-                    />
-                  ) : (
-                    <View style={styles.recipePlaceholder}>
-                      <Text style={{ fontSize: 28 }}>🍽️</Text>
-                    </View>
-                  )}
+              {savedRecipes.map((recipe: any) => {
+                const recipeImageUrl = getSavedRecipeImageUrl(recipe);
+                const recipeEmoji = getSavedRecipeEmoji(recipe);
 
-                  <Text style={styles.recipeName} numberOfLines={2}>
-                    {recipe.name}
-                  </Text>
-
+                return (
                   <Pressable
-                    style={styles.removeSaved}
-                    onPress={() => removeSavedRecipe(recipe.id)}
+                    key={recipe.id}
+                    onPress={() =>
+                      recipe.meal &&
+                      navigation.navigate('RecipeDetail', { meal: recipe.meal })
+                    }
+                    style={styles.recipeCard}
                   >
-                    <Ionicons name="close" size={16} color="white" />
+                    {recipeImageUrl ? (
+                      <Image
+                        source={{ uri: recipeImageUrl }}
+                        style={styles.recipeImage}
+                      />
+                    ) : (
+                      <View style={styles.recipePlaceholder}>
+                        <Text style={styles.recipePlaceholderEmoji}>
+                          {recipeEmoji}
+                        </Text>
+                      </View>
+                    )}
+
+                    <Text style={styles.recipeName} numberOfLines={2}>
+                      {recipe.name || recipe.meal?.strMeal || 'Recipe'}
+                    </Text>
+
+                    <Pressable
+                      style={styles.removeSaved}
+                      onPress={() => removeSavedRecipe(recipe.id)}
+                    >
+                      <Ionicons name="close" size={16} color="white" />
+                    </Pressable>
                   </Pressable>
-                </Pressable>
-              ))}
+                );
+              })}
             </ScrollView>
           )}
         </View>
@@ -864,6 +977,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  recipePlaceholderEmoji: {
+    fontSize: 42,
   },
 
   recipeName: {
