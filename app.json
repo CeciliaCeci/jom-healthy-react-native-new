@@ -12,12 +12,20 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {},
+    "android": {
+      "package": "com.jomhealthy.app"
+    },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4817c3be-8370-49a1-9535-caa157064187"
+      }
+    },
+    "owner": "leo_zhang_x"
   }
 }
