@@ -1,117 +1,87 @@
 const API_BASE_URL = 'https://jom-healthy-java.onrender.com';
 
-export type NutritionNeeds = {
-  calories: number;
-  carbs: number;
-  protein: number;
-  fat: number;
+type ApiResult<T> = {
+  ok: boolean;
+  data?: T;
+  message: string;
+  status?: number;
 };
 
-export type ApiResult<T> =
-  | {
-      ok: true;
-      data: T;
-    }
-  | {
-      ok: false;
-      message: string;
-    };
-
-async function safeFetchJson<T>(
-  url: string,
-  options?: RequestInit
-): Promise<ApiResult<T>> {
+async function safeFetchJson<T>(url: string, options?: RequestInit): Promise<ApiResult<T>> {
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-      ...options,
-    });
+    const response = await fetch(url, options);
+    const text = await response.text();
+
+    let json: any = null;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = text;
+      }
+    }
 
     if (!response.ok) {
       return {
         ok: false,
-        message: `Server error: ${response.status}`,
+        status: response.status,
+        data: json,
+        message:
+          typeof json?.message === 'string'
+            ? json.message
+            : `Server error ${response.status}`,
       };
     }
-
-    const text = await response.text();
-
-    if (!text) {
-      return {
-        ok: false,
-        message: 'Empty response from server',
-      };
-    }
-
-    try {
-      return {
-        ok: true,
-        data: JSON.parse(text),
-      };
-    } catch {
-      return {
-        ok: false,
-        message: 'Invalid response format',
-      };
-    }
-  } catch (error) {
-    console.log('API fetch failed:', error);
 
     return {
+      ok: true,
+      status: response.status,
+      data: json as T,
+      message: 'success',
+    };
+  } catch (error: any) {
+    return {
       ok: false,
-      message: 'Network error. Please check your connection and try again.',
+      message: error?.message || 'Network error. Please try again.',
     };
   }
 }
 
-export async function getFoodNutrition(name: string) {
-  const url = `${API_BASE_URL}/food/getFoodNutrition?name=${encodeURIComponent(
-    name
-  )}`;
+export async function searchMeals(name: string) {
+  const url = `${API_BASE_URL}/meal/search?name=${encodeURIComponent(name)}`;
 
   return safeFetchJson<any>(url, {
-    method: 'POST',
+    method: 'GET',
     headers: {
       Accept: 'application/json',
     },
   });
 }
 
-export async function getFoodNutritionNeeds(params: {
-  heightCm: number;
-  weightKg: number;
-  ageMonths: number;
-  gender: number;
+export async function generateMealPlanByAi(params: {
+  childName?: string;
+  age?: number;
+  gender?: 'boy' | 'girl' | string;
+  heightCm?: number;
+  weightKg?: number;
+  allergies?: string[];
+  restrictions?: any;
+  targetCarbs?: number;
+  targetProtein?: number;
+  targetFat?: number;
+  days?: number;
+  mealPreference?: string;
 }) {
-  const query = new URLSearchParams({
-    heightCm: String(params.heightCm),
-    weightKg: String(params.weightKg),
-    ageMonths: String(params.ageMonths),
-    gender: String(params.gender),
-  });
-
-  const url = `${API_BASE_URL}/food/getFoodNutritionNeeds?${query.toString()}`;
+  const url = `${API_BASE_URL}/meal/generatePlan`;
 
   return safeFetchJson<any>(url, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify(params),
   });
 }
 
-export async function searchMeals(keyword: string) {
-  const url = `${API_BASE_URL}/meal/search?keyword=${encodeURIComponent(
-    keyword
-  )}`;
-
-  return safeFetchJson<any>(url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
-}
+export { API_BASE_URL, safeFetchJson };

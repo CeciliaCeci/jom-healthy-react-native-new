@@ -32,9 +32,9 @@ import {
 import ChildAvatar from '../components/ChildAvatar';
 import DigitalTwin from '../components/DigitalTwin';
 import LanguageModal from '../components/LanguageModal';
-import MealPlanDurationModal from '../components/MealPlanDurationModal';
 import AddChildModal from '../components/AddChildModal';
 import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
+import { useAiMealPlanGeneration } from '../context/AiMealPlanGenerationContext';
 // Use for Markdown format of Health Insights, JJ
 import Markdown from 'react-native-markdown-display';
 // Use for details of each type of health insights, JJ
@@ -50,6 +50,7 @@ const BASE_URL = 'https://jom-healthy-java.onrender.com';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
+  const { openAiMealPlanModal } = useAiMealPlanGeneration();
   const { language, t } = useLanguage();
   const {
     children,
@@ -60,7 +61,6 @@ export default function HomeScreen() {
   } = useChildProfile();
 
   const [showLanguage, setShowLanguage] = useState(false);
-  const [showDuration, setShowDuration] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
   const [showChildren, setShowChildren] = useState(false);
   const currentLanguage = language; // Record the current language for API calls, JJ
@@ -255,7 +255,7 @@ export default function HomeScreen() {
       source: 'search',
     });
   };
-
+  
 
   return (
     <>
@@ -481,11 +481,11 @@ export default function HomeScreen() {
                 <View style={styles.profileActions}>
                   <Pressable
                     style={styles.mealPlanButton}
-                    onPress={() => setShowDuration(true)}
+                    onPress={() => openAiMealPlanModal({ startDate: new Date() })}
                   >
-                    <Ionicons name="calendar" size={16} color="#FFFFFF" />
+                    <Ionicons name="sparkles" size={16} color="#FFFFFF" />
                     <Text style={styles.mealPlanButtonText}>
-                      {t('mealPlan')}
+                      AI Meal Plan
                     </Text>
                   </Pressable>
 
@@ -658,11 +658,6 @@ export default function HomeScreen() {
         onClose={() => setShowLanguage(false)}
       />
 
-      <MealPlanDurationModal
-        visible={showDuration}
-        onClose={() => setShowDuration(false)}
-        onSelect={() => navigation.navigate('Meal')}
-      />
 
       <AddChildModal
         visible={showAddChild}
