@@ -28,7 +28,6 @@ import {
   SectionTitle,
 } from '../components/Common';
 import ChildrenProfilesModal from '../components/ChildrenProfilesModal';
-import LanguageModal from '../components/LanguageModal';
 
 type BackupPayload = {
   backupType: 'JOMHEALTHY_BACKUP';
@@ -189,17 +188,61 @@ export default function ProfileScreen() {
   } = useChildProfile();
 
   const [showChildren, setShowChildren] = useState(false);
-  const [showLanguage, setShowLanguage] = useState(false);
   const [showImportGuide, setShowImportGuide] = useState(false);
   const [exportingData, setExportingData] = useState(false);
   const [importingData, setImportingData] = useState(false);
 
-  const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
 
   const getText = (en: string, zh: string, ms: string) => {
     if (language === 'zh') return zh;
     if (language === 'ms') return ms;
     return en;
+  };
+
+
+  const getChildCountText = () => {
+    if (children.length === 0) {
+      return getText('No children registered', '还没有注册小孩档案', 'Belum ada profil kanak-kanak');
+    }
+
+    if (children.length === 1) {
+      return getText('1 child registered', '已注册 1 个小孩', '1 profil kanak-kanak');
+    }
+
+    return getText(
+      `${children.length} children registered`,
+      `已注册 ${children.length} 个小孩`,
+      `${children.length} profil kanak-kanak`
+    );
+  };
+
+  const getGenderText = (gender?: string | null) => {
+    if (gender === 'boy') return getText('boy', '男孩', 'lelaki');
+    if (gender === 'girl') return getText('girl', '女孩', 'perempuan');
+    return getText('child', '小孩', 'anak');
+  };
+
+  const getTagText = (tag: string) => {
+    const value = String(tag || '').toLowerCase();
+
+    if (value.includes('vegetarian')) return getText('Vegetarian', '素食', 'Vegetarian');
+    if (value.includes('halal')) return getText('Halal', '清真', 'Halal');
+    if (value.includes('lactose')) return getText('Lactose intolerance', '乳糖不耐受', 'Intoleransi laktosa');
+    if (value.includes('seafood')) return getText('No seafood', '不吃海鲜', 'Tiada makanan laut');
+
+    return tag;
+  };
+
+  const getLocalizedRecipeName = (recipe: any) => {
+    if (language === 'zh') {
+      return recipe?.nameCn || recipe?.strMealCn || recipe?.meal?.strMealCn || recipe?.meal?.nameCn || recipe?.name || recipe?.meal?.strMeal || getText('Recipe', '食谱', 'Resipi');
+    }
+
+    if (language === 'ms') {
+      return recipe?.nameMs || recipe?.strMealMs || recipe?.meal?.strMealMs || recipe?.meal?.nameMs || recipe?.name || recipe?.meal?.strMeal || getText('Recipe', '食谱', 'Resipi');
+    }
+
+    return recipe?.nameEn || recipe?.strMealEn || recipe?.name || recipe?.meal?.strMealEn || recipe?.meal?.strMeal || getText('Recipe', '食谱', 'Resipi');
   };
 
   const tags = [
@@ -391,14 +434,6 @@ export default function ProfileScreen() {
           title={t('profile')}
           subtitle={t('manageAccount')}
           icon="person"
-          right={
-            <Pressable
-              style={styles.langButton}
-              onPress={() => setShowLanguage(true)}
-            >
-              <Text style={styles.langText}>{langCode}</Text>
-            </Pressable>
-          }
         />
 
         <View style={styles.body}>
@@ -408,20 +443,16 @@ export default function ProfileScreen() {
 
               <View style={styles.profileInfo}>
                 <Text style={styles.name} numberOfLines={1}>
-                  {activeChild?.nickname || 'No Child Selected'}
+                  {activeChild?.nickname || getText('No Child Selected', '未选择小孩', 'Tiada Anak Dipilih')}
                 </Text>
 
                 <Text style={styles.meta}>
-                  {children.length === 0
-                    ? 'No children registered'
-                    : children.length === 1
-                      ? '1 child registered'
-                      : `${children.length} children registered`}
+                  {getChildCountText()}
                 </Text>
 
                 {activeChild && (
                   <Text style={styles.meta}>
-                    {activeChild.age} years · {activeChild.height}cm ·{' '}
+                    {activeChild.age} {getText('years', '岁', 'tahun')} · {getGenderText(activeChild.gender)} · {activeChild.height}cm ·{' '}
                     {activeChild.weight}kg
                   </Text>
                 )}
@@ -500,13 +531,13 @@ export default function ProfileScreen() {
           {activeChild && tags.length > 0 && (
             <Card>
               <Text style={styles.sectionHeading}>
-                Preferences & Restrictions
+                {getText('Preferences & Restrictions', '偏好与限制', 'Pilihan & Sekatan')}
               </Text>
 
               <View style={styles.tags}>
                 {tags.map((tag) => (
-                  <Text key={tag} style={styles.tag}>
-                    {tag}
+                  <Text key={getTagText(tag)} style={styles.tag}>
+                    {getTagText(tag)}
                   </Text>
                 ))}
               </View>
@@ -577,14 +608,14 @@ export default function ProfileScreen() {
             </Pressable>
           </Card>
 
-          <SectionTitle title="Saved Recipes" />
+          <SectionTitle title={getText('Saved Recipes', '收藏食谱', 'Resipi Tersimpan')} />
 
           {savedRecipes.length === 0 ? (
             <Card style={styles.emptySavedCard}>
               <Text style={styles.emptySavedEmoji}>🔖</Text>
-              <Text style={styles.emptySavedTitle}>No saved recipes yet</Text>
+              <Text style={styles.emptySavedTitle}>{getText('No saved recipes yet', '还没有收藏食谱', 'Belum ada resipi disimpan')}</Text>
               <Text style={styles.emptySavedText}>
-                Open a recipe detail page and tap Save to add it here.
+                {getText('Open a recipe detail page and tap Save to add it here.', '打开食谱详情页，点击收藏即可显示在这里。', 'Buka halaman butiran resipi dan tekan Simpan untuk tambah di sini.')}
               </Text>
             </Card>
           ) : (
@@ -621,7 +652,7 @@ export default function ProfileScreen() {
                     )}
 
                     <Text style={styles.recipeName} numberOfLines={2}>
-                      {recipe.name || recipe.meal?.strMeal || 'Recipe'}
+                      {getLocalizedRecipeName(recipe)}
                     </Text>
 
                     <Pressable
@@ -736,10 +767,6 @@ export default function ProfileScreen() {
         onClose={() => setShowChildren(false)}
       />
 
-      <LanguageModal
-        visible={showLanguage}
-        onClose={() => setShowLanguage(false)}
-      />
     </>
   );
 }

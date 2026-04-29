@@ -45,10 +45,50 @@ type MealRecipe = {
   id?: number;
   idMeal: string;
   strMeal: string;
+  strMealEn?: string | null;
+  strMealCn?: string | null;
+  strMealCN?: string | null;
+  strMealZh?: string | null;
+  strMealMs?: string | null;
+  nameEn?: string | null;
+  nameCn?: string | null;
+  nameCN?: string | null;
+  nameZh?: string | null;
+  nameMs?: string | null;
   strMealAlternate?: string | null;
   strCategory?: string | null;
+  strCategoryEn?: string | null;
+  strCategoryCn?: string | null;
+  strCategoryCN?: string | null;
+  strCategoryZh?: string | null;
+  strCategoryMs?: string | null;
+  categoryEn?: string | null;
+  categoryCn?: string | null;
+  categoryCN?: string | null;
+  categoryZh?: string | null;
+  categoryMs?: string | null;
   strArea?: string | null;
+  strAreaEn?: string | null;
+  strAreaCn?: string | null;
+  strAreaCN?: string | null;
+  strAreaZh?: string | null;
+  strAreaMs?: string | null;
+  areaEn?: string | null;
+  areaCn?: string | null;
+  areaCN?: string | null;
+  areaZh?: string | null;
+  areaMs?: string | null;
   strInstructions?: string | null;
+  strInstructionsEn?: string | null;
+  strInstructionsCn?: string | null;
+  strInstructionsCN?: string | null;
+  strInstructionsZh?: string | null;
+  strInstructionsMs?: string | null;
+  instructionsEn?: string | null;
+  instructionsCn?: string | null;
+  instructionsCN?: string | null;
+  instructionsZh?: string | null;
+  instructionsMs?: string | null;
   strMealThumb?: string | null;
   mealIconEmoji?: string | null;
   mealIconName?: string | null;
@@ -71,9 +111,15 @@ type ShoppingCategory = 'vegetables' | 'protein' | 'carbs' | 'others';
 type ShoppingItem = {
   id: string;
   name: string;
+  nameEn?: string;
+  nameCn?: string;
+  nameMs?: string;
   quantity: string;
   category: ShoppingCategory;
   source: string;
+  sourceEn?: string;
+  sourceCn?: string;
+  sourceMs?: string;
   mealId: string;
   checked: boolean;
 };
@@ -297,16 +343,130 @@ function guessMealEmoji(name?: string | null, category?: string | null) {
   return '🍽️';
 }
 
+function normalizeLanguageCode(language?: string | null) {
+  const text = String(language || 'en').toLowerCase();
+
+  if (text === 'zh' || text === 'cn' || text.startsWith('zh-') || text.includes('chinese')) {
+    return 'zh';
+  }
+
+  if (text === 'ms' || text === 'my' || text.startsWith('ms-') || text.includes('malay')) {
+    return 'ms';
+  }
+
+  return 'en';
+}
+
+function cleanLocalizedValue(value: any) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  return text.length > 0 ? text : '';
+}
+
+function pickLocalizedValue(
+  language: string,
+  enValue?: any,
+  cnValue?: any,
+  msValue?: any,
+  fallback?: any
+) {
+  const lang = normalizeLanguageCode(language);
+
+  if (lang === 'zh') {
+    return cleanLocalizedValue(cnValue) || cleanLocalizedValue(enValue) || cleanLocalizedValue(msValue) || cleanLocalizedValue(fallback);
+  }
+
+  if (lang === 'ms') {
+    return cleanLocalizedValue(msValue) || cleanLocalizedValue(enValue) || cleanLocalizedValue(cnValue) || cleanLocalizedValue(fallback);
+  }
+
+  return cleanLocalizedValue(enValue) || cleanLocalizedValue(fallback) || cleanLocalizedValue(cnValue) || cleanLocalizedValue(msValue);
+}
+
+function getMealName(meal: any, language: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strMealEn || meal?.nameEn || meal?.strMeal || meal?.name,
+    meal?.strMealCn || meal?.strMealCN || meal?.strMealZh || meal?.nameCn || meal?.nameCN || meal?.nameZh,
+    meal?.strMealMs || meal?.nameMs,
+    meal?.strMeal || meal?.name || 'Meal'
+  );
+}
+
+function getMealCategory(meal: any, language: string, fallback: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strCategoryEn || meal?.categoryEn || meal?.strCategory || meal?.category,
+    meal?.strCategoryCn || meal?.strCategoryCN || meal?.strCategoryZh || meal?.categoryCn || meal?.categoryCN || meal?.categoryZh,
+    meal?.strCategoryMs || meal?.categoryMs,
+    fallback
+  );
+}
+
+function getMealArea(meal: any, language: string, fallback: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strAreaEn || meal?.areaEn || meal?.strArea || meal?.area,
+    meal?.strAreaCn || meal?.strAreaCN || meal?.strAreaZh || meal?.areaCn || meal?.areaCN || meal?.areaZh,
+    meal?.strAreaMs || meal?.areaMs,
+    fallback
+  );
+}
+
+function getMealInstructions(meal: any, language: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strInstructionsEn || meal?.instructionsEn || meal?.strInstructions || meal?.instructions,
+    meal?.strInstructionsCn || meal?.strInstructionsCN || meal?.strInstructionsZh || meal?.instructionsCn || meal?.instructionsCN || meal?.instructionsZh,
+    meal?.strInstructionsMs || meal?.instructionsMs,
+    meal?.strInstructions || meal?.instructions || ''
+  );
+}
+
+function getIngredientNameByLanguage(item: any, language: string) {
+  return pickLocalizedValue(
+    language,
+    item?.foodNameEn || item?.nameEn || item?.ingredientName || item?.name,
+    item?.foodNameCn || item?.foodNameCN || item?.foodNameZh || item?.nameCn || item?.nameCN || item?.nameZh,
+    item?.foodNameMs || item?.nameMs,
+    normalizeIngredientName(item)
+  );
+}
+
 function normalizeAiMeal(meal: any): MealRecipe {
   const rawImageUrl = meal?.strMealThumb || meal?.imageUrl || '';
   const rawYoutubeUrl = meal?.strYoutube || meal?.youtubeUrl || '';
 
   return {
     idMeal: meal?.idMeal || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    strMeal: meal?.strMeal || meal?.name || 'AI Recommended Meal',
-    strCategory: meal?.strCategory || meal?.category || 'AI Meal',
-    strArea: meal?.strArea || meal?.area || 'Healthy',
-    strInstructions: meal?.strInstructions || meal?.instructions || '',
+    strMeal: meal?.strMeal || meal?.strMealEn || meal?.name || 'AI Recommended Meal',
+    strMealEn: meal?.strMealEn || meal?.strMeal || meal?.nameEn || meal?.name || 'AI Recommended Meal',
+    strMealCn: meal?.strMealCn || meal?.strMealCN || meal?.strMealZh || meal?.nameCn || meal?.nameCN || meal?.nameZh || '',
+    strMealMs: meal?.strMealMs || meal?.nameMs || '',
+    nameEn: meal?.nameEn || meal?.strMealEn || meal?.strMeal || meal?.name || '',
+    nameCn: meal?.nameCn || meal?.nameCN || meal?.nameZh || meal?.strMealCn || meal?.strMealCN || meal?.strMealZh || '',
+    nameMs: meal?.nameMs || meal?.strMealMs || '',
+    strCategory: meal?.strCategory || meal?.strCategoryEn || meal?.category || 'AI Meal',
+    strCategoryEn: meal?.strCategoryEn || meal?.strCategory || meal?.categoryEn || meal?.category || 'AI Meal',
+    strCategoryCn: meal?.strCategoryCn || meal?.strCategoryCN || meal?.strCategoryZh || meal?.categoryCn || meal?.categoryCN || meal?.categoryZh || '',
+    strCategoryMs: meal?.strCategoryMs || meal?.categoryMs || '',
+    categoryEn: meal?.categoryEn || meal?.strCategoryEn || meal?.strCategory || meal?.category || '',
+    categoryCn: meal?.categoryCn || meal?.categoryCN || meal?.categoryZh || meal?.strCategoryCn || meal?.strCategoryCN || meal?.strCategoryZh || '',
+    categoryMs: meal?.categoryMs || meal?.strCategoryMs || '',
+    strArea: meal?.strArea || meal?.strAreaEn || meal?.area || 'Healthy',
+    strAreaEn: meal?.strAreaEn || meal?.strArea || meal?.areaEn || meal?.area || 'Healthy',
+    strAreaCn: meal?.strAreaCn || meal?.strAreaCN || meal?.strAreaZh || meal?.areaCn || meal?.areaCN || meal?.areaZh || '',
+    strAreaMs: meal?.strAreaMs || meal?.areaMs || '',
+    areaEn: meal?.areaEn || meal?.strAreaEn || meal?.strArea || meal?.area || '',
+    areaCn: meal?.areaCn || meal?.areaCN || meal?.areaZh || meal?.strAreaCn || meal?.strAreaCN || meal?.strAreaZh || '',
+    areaMs: meal?.areaMs || meal?.strAreaMs || '',
+    strInstructions: meal?.strInstructions || meal?.strInstructionsEn || meal?.instructions || '',
+    strInstructionsEn: meal?.strInstructionsEn || meal?.strInstructions || meal?.instructionsEn || meal?.instructions || '',
+    strInstructionsCn: meal?.strInstructionsCn || meal?.strInstructionsCN || meal?.strInstructionsZh || meal?.instructionsCn || meal?.instructionsCN || meal?.instructionsZh || '',
+    strInstructionsMs: meal?.strInstructionsMs || meal?.instructionsMs || '',
+    instructionsEn: meal?.instructionsEn || meal?.strInstructionsEn || meal?.strInstructions || meal?.instructions || '',
+    instructionsCn: meal?.instructionsCn || meal?.instructionsCN || meal?.instructionsZh || meal?.strInstructionsCn || meal?.strInstructionsCN || meal?.strInstructionsZh || '',
+    instructionsMs: meal?.instructionsMs || meal?.strInstructionsMs || '',
     strMealThumb: isValidImageUrl(rawImageUrl) ? rawImageUrl : null,
     mealIconEmoji: meal?.mealIconEmoji || guessMealEmoji(meal?.strMeal || meal?.name, meal?.strCategory || meal?.category),
     mealIconName: meal?.mealIconName || null,
@@ -324,9 +484,9 @@ function normalizeAiMeal(meal: any): MealRecipe {
           measure: item.measure || item.quantity || '',
           normalizedName: item.normalizedName || item.name || item.ingredientName || '',
           gramsEstimated: safeNumber(item.gramsEstimated || item.grams),
-          foodNameEn: item.foodNameEn || item.name || item.ingredientName || '',
-          foodNameCn: item.foodNameCn || '',
-          foodNameMs: item.foodNameMs || '',
+          foodNameEn: item.foodNameEn || item.nameEn || item.name || item.ingredientName || '',
+          foodNameCn: item.foodNameCn || item.foodNameCN || item.foodNameZh || item.nameCn || item.nameCN || item.nameZh || '',
+          foodNameMs: item.foodNameMs || item.nameMs || '',
           foodGroup: item.foodGroup || 'others',
           energyKcal: safeNumber(item.energyKcal),
           proteinG: safeNumber(item.proteinG),
@@ -335,6 +495,55 @@ function normalizeAiMeal(meal: any): MealRecipe {
         }))
       : [],
   };
+}
+
+
+function normalizeDayPlan(dayPlan: any): MealPlanForDay {
+  const normalized: MealPlanForDay = {};
+
+  if (!dayPlan || typeof dayPlan !== 'object') {
+    return normalized;
+  }
+
+  if (dayPlan.Breakfast || dayPlan.breakfast) {
+    normalized.Breakfast = normalizeAiMeal(dayPlan.Breakfast || dayPlan.breakfast);
+  }
+
+  if (dayPlan.Lunch || dayPlan.lunch) {
+    normalized.Lunch = normalizeAiMeal(dayPlan.Lunch || dayPlan.lunch);
+  }
+
+  if (dayPlan.Dinner || dayPlan.dinner) {
+    normalized.Dinner = normalizeAiMeal(dayPlan.Dinner || dayPlan.dinner);
+  }
+
+  if (dayPlan.Snack || dayPlan.snack) {
+    normalized.Snack = normalizeAiMeal(dayPlan.Snack || dayPlan.snack);
+  }
+
+  return normalized;
+}
+
+function normalizeMealPlansByOwner(raw: any): Record<string, Record<string, MealPlanForDay>> {
+  const normalized: Record<string, Record<string, MealPlanForDay>> = {};
+
+  if (!raw || typeof raw !== 'object') {
+    return normalized;
+  }
+
+  Object.entries(raw).forEach(([ownerKey, ownerPlans]) => {
+    if (!ownerPlans || typeof ownerPlans !== 'object') {
+      return;
+    }
+
+    normalized[ownerKey] = {};
+
+    Object.entries(ownerPlans as Record<string, any>).forEach(([dateKey, dayPlan]) => {
+      normalized[ownerKey][dateKey] = normalizeDayPlan(dayPlan);
+    });
+  });
+
+  return normalized;
 }
 
 async function generateShoppingListByOwner(
@@ -357,16 +566,28 @@ async function generateShoppingListByOwner(
           if (!meal || !Array.isArray(meal.ingredients)) return;
 
           meal.ingredients.forEach((ingredient: any) => {
-            const name = normalizeIngredientName(ingredient);
+            const nameEn = getIngredientNameByLanguage(ingredient, 'en');
+            const nameCn = getIngredientNameByLanguage(ingredient, 'zh');
+            const nameMs = getIngredientNameByLanguage(ingredient, 'ms');
+            const name = nameEn;
             const quantity = normalizeIngredientQuantity(ingredient);
             const category = classifyIngredientCategory(ingredient);
             const id = `${name.toLowerCase()}-${category}`.replace(/\s+/g, '-');
             const existing = mergedMap.get(id);
+            const mealNameEn = getMealName(meal, 'en');
+            const mealNameCn = getMealName(meal, 'zh');
+            const mealNameMs = getMealName(meal, 'ms');
+            const sourceEn = `${dateKey} · ${slot}: ${mealNameEn}`;
+            const sourceCn = `${dateKey} · ${slot}: ${mealNameCn}`;
+            const sourceMs = `${dateKey} · ${slot}: ${mealNameMs}`;
 
             if (existing) {
               existing.quantity = [existing.quantity, quantity].filter(Boolean).join(' + ');
-              if (!existing.source.includes(meal.strMeal)) {
-                existing.source += `, ${dateKey} · ${slot}: ${meal.strMeal}`;
+              if (!existing.source.includes(mealNameEn)) {
+                existing.source += `, ${sourceEn}`;
+                existing.sourceEn = [existing.sourceEn, sourceEn].filter(Boolean).join(', ');
+                existing.sourceCn = [existing.sourceCn, sourceCn].filter(Boolean).join(', ');
+                existing.sourceMs = [existing.sourceMs, sourceMs].filter(Boolean).join(', ');
               }
               return;
             }
@@ -374,9 +595,15 @@ async function generateShoppingListByOwner(
             mergedMap.set(id, {
               id,
               name,
+              nameEn,
+              nameCn,
+              nameMs,
               quantity,
               category,
-              source: `${dateKey} · ${slot}: ${meal.strMeal}`,
+              source: sourceEn,
+              sourceEn,
+              sourceCn,
+              sourceMs,
               mealId: meal.idMeal,
               checked: checkedMap.get(id) || false,
             });
@@ -510,11 +737,12 @@ export default function MealScreen() {
   const { activeChild, getOwnerKey, nutritionNeeds } = useChildProfile();
   const ownerKey = getOwnerKey();
   const today = useMemo(() => new Date(), []);
-  const locale = language === 'zh' ? 'zh-CN' : language === 'ms' ? 'ms-MY' : 'en-US';
+  const locale = normalizeLanguageCode(language) === 'zh' ? 'zh-CN' : normalizeLanguageCode(language) === 'ms' ? 'ms-MY' : 'en-US';
 
   const getText = (en: string, zh: string, ms: string) => {
-    if (language === 'zh') return zh;
-    if (language === 'ms') return ms;
+    const lang = normalizeLanguageCode(language);
+    if (lang === 'zh') return zh;
+    if (lang === 'ms') return ms;
     return en;
   };
 
@@ -566,8 +794,12 @@ export default function MealScreen() {
   const loadStoredMealPlans = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(MEAL_PLANS_STORAGE_KEY);
-      if (raw) setAllMealPlans(JSON.parse(raw));
-      else setAllMealPlans({});
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setAllMealPlans(normalizeMealPlansByOwner(parsed));
+      } else {
+        setAllMealPlans({});
+      }
     } catch (error) {
       console.log('Load meal plans failed:', error);
       setAllMealPlans({});
@@ -602,8 +834,9 @@ export default function MealScreen() {
     if (!mealPlansLoaded) return;
     const saveMealPlans = async () => {
       try {
-        await AsyncStorage.setItem(MEAL_PLANS_STORAGE_KEY, JSON.stringify(allMealPlans));
-        await generateShoppingListByOwner(allMealPlans);
+        const normalizedPlans = normalizeMealPlansByOwner(allMealPlans);
+        await AsyncStorage.setItem(MEAL_PLANS_STORAGE_KEY, JSON.stringify(normalizedPlans));
+        await generateShoppingListByOwner(normalizedPlans);
       } catch (error) {
         console.log('Save meal plans failed:', error);
       }
@@ -650,10 +883,12 @@ export default function MealScreen() {
   };
 
   const addMealToPlan = (meal: MealRecipe) => {
+    const normalizedMeal = normalizeAiMeal(meal);
+
     updateCurrentOwnerMealPlans((prev) => {
       const current = prev[selectedKey] || {};
       const existingMealIds = SLOT_ORDER.map((slot) => current[slot]?.idMeal).filter(Boolean);
-      if (existingMealIds.includes(meal.idMeal)) {
+      if (existingMealIds.includes(normalizedMeal.idMeal)) {
         Alert.alert(getText('Already Added', '已添加', 'Sudah Ditambah'), getText('This recipe is already in your meal plan.', '这个食谱已经在你的膳食计划里。', 'Resipi ini sudah ada dalam pelan makanan anda.'));
         return prev;
       }
@@ -662,7 +897,7 @@ export default function MealScreen() {
         Alert.alert(getText('Meal Plan Full', '膳食计划已满', 'Pelan Makanan Penuh'), getText('You already have 4 meals for this day.', '这一天已经有 4 餐了。', 'Anda sudah mempunyai 4 hidangan untuk hari ini.'));
         return prev;
       }
-      return { ...prev, [selectedKey]: { ...current, [emptySlot]: meal } };
+      return { ...prev, [selectedKey]: { ...current, [emptySlot]: normalizedMeal } };
     });
     setKeyword('');
     setSuggestions([]);
@@ -679,7 +914,8 @@ export default function MealScreen() {
   };
 
   const replaceMealInSlot = (slot: MealSlotKey, meal: MealRecipe) => {
-    updateCurrentOwnerMealPlans((prev) => ({ ...prev, [selectedKey]: { ...(prev[selectedKey] || {}), [slot]: meal } }));
+    const normalizedMeal = normalizeAiMeal(meal);
+    updateCurrentOwnerMealPlans((prev) => ({ ...prev, [selectedKey]: { ...(prev[selectedKey] || {}), [slot]: normalizedMeal } }));
     setKeyword('');
     setSuggestions([]);
     setShowSuggestions(false);
@@ -706,7 +942,7 @@ export default function MealScreen() {
     ]);
   };
 
-  const openRecipeDetail = (meal: MealRecipe) => navigation.navigate('RecipeDetail', { meal });
+  const openRecipeDetail = (meal: MealRecipe) => navigation.navigate('RecipeDetail', { meal: normalizeAiMeal(meal) });
 
   const openYoutube = async (url?: string | null) => {
     if (!url) {
@@ -744,11 +980,11 @@ export default function MealScreen() {
         {meal.strMealThumb ? (
           <Image source={{ uri: meal.strMealThumb }} style={styles.suggestionImage} />
         ) : (
-          <View style={styles.suggestionImageFallback}><Text style={styles.fallbackEmoji}>{meal.mealIconEmoji || guessMealEmoji(meal.strMeal, meal.strCategory)}</Text></View>
+          <View style={styles.suggestionImageFallback}><Text style={styles.fallbackEmoji}>{meal.mealIconEmoji || guessMealEmoji(getMealName(meal, language), getMealCategory(meal, language, ''))}</Text></View>
         )}
         <View style={styles.suggestionContent}>
-          <Text style={styles.suggestionTitle} numberOfLines={2}>{meal.strMeal}</Text>
-          <Text style={styles.suggestionMeta}>{meal.strCategory || getText('Recipe', '食谱', 'Resipi')} · {meal.strArea || getText('Meal', '餐食', 'Hidangan')}</Text>
+          <Text style={styles.suggestionTitle} numberOfLines={2}>{getMealName(meal, language)}</Text>
+          <Text style={styles.suggestionMeta}>{getMealCategory(meal, language, getText('Recipe', '食谱', 'Resipi'))} · {getMealArea(meal, language, getText('Meal', '餐食', 'Hidangan'))}</Text>
           <Text style={styles.suggestionNutrition}>
             {round(meal.totalEnergyKcal)} kcal · {getText('Protein', '蛋白质', 'Protein')} {round(meal.totalProteinG)}g · {getText('Carbs', '碳水', 'Karbo')} {round(meal.totalCarbohydrateG)}g · {getText('Fat', '脂肪', 'Lemak')} {round(meal.totalFatG)}g
           </Text>
@@ -787,10 +1023,10 @@ export default function MealScreen() {
         {meal.strMealThumb ? (
           <Image source={{ uri: meal.strMealThumb }} style={styles.mealImage} />
         ) : (
-          <View style={styles.mealImageFallback}><Text style={styles.fallbackEmoji}>{meal.mealIconEmoji || guessMealEmoji(meal.strMeal, meal.strCategory)}</Text></View>
+          <View style={styles.mealImageFallback}><Text style={styles.fallbackEmoji}>{meal.mealIconEmoji || guessMealEmoji(getMealName(meal, language), getMealCategory(meal, language, ''))}</Text></View>
         )}
         <View style={styles.mealContent}>
-          <Text style={styles.mealTitle} numberOfLines={2}>{meal.strMeal}</Text>
+          <Text style={styles.mealTitle} numberOfLines={2}>{getMealName(meal, language)}</Text>
           <View style={styles.macroTagRow}>
             <View style={[styles.macroTag, styles.macroCarb]}><Text style={[styles.macroTagText, { color: '#F97316' }]}>{round(meal.totalCarbohydrateG)}g {getText('carbs', '碳水', 'karbo')}</Text></View>
             <View style={[styles.macroTag, styles.macroProtein]}><Text style={[styles.macroTagText, { color: '#2563EB' }]}>{round(meal.totalProteinG)}g {getText('protein', '蛋白质', 'protein')}</Text></View>

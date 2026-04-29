@@ -23,7 +23,6 @@ import {
   Screen,
   SectionTitle,
 } from '../components/Common';
-import LanguageModal from '../components/LanguageModal';
 
 const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_SHOPPING_LIST_BY_OWNER_V1';
 
@@ -32,9 +31,15 @@ type ShoppingCategory = 'vegetables' | 'protein' | 'carbs' | 'others';
 type ShoppingItem = {
   id: string;
   name: string;
+  nameCn?: string;
+  nameMs?: string;
   quantity: string;
+  quantityCn?: string;
+  quantityMs?: string;
   category: ShoppingCategory;
   source: string;
+  sourceCn?: string;
+  sourceMs?: string;
   mealId: string;
   checked: boolean;
 };
@@ -112,18 +117,132 @@ function buildGoogleMapsUrl(query: string) {
   )}`;
 }
 
+
+const INGREDIENT_TRANSLATIONS: Record<string, { zh: string; ms: string }> = {
+  rice: { zh: '米饭', ms: 'Nasi' },
+  nasi: { zh: '米饭', ms: 'Nasi' },
+  bread: { zh: '面包', ms: 'Roti' },
+  toast: { zh: '吐司', ms: 'Roti bakar' },
+  noodle: { zh: '面条', ms: 'Mi' },
+  noodles: { zh: '面条', ms: 'Mi' },
+  pasta: { zh: '意面', ms: 'Pasta' },
+  spaghetti: { zh: '意大利面', ms: 'Spageti' },
+  oat: { zh: '燕麦', ms: 'Oat' },
+  oats: { zh: '燕麦', ms: 'Oat' },
+  flour: { zh: '面粉', ms: 'Tepung' },
+  potato: { zh: '土豆', ms: 'Kentang' },
+  sweet_potato: { zh: '红薯', ms: 'Ubi keledek' },
+  chicken: { zh: '鸡肉', ms: 'Ayam' },
+  chicken_breast: { zh: '鸡胸肉', ms: 'Dada ayam' },
+  beef: { zh: '牛肉', ms: 'Daging lembu' },
+  fish: { zh: '鱼', ms: 'Ikan' },
+  fish_fillet: { zh: '鱼片', ms: 'Isi ikan' },
+  salmon: { zh: '三文鱼', ms: 'Salmon' },
+  tuna: { zh: '金枪鱼', ms: 'Tuna' },
+  egg: { zh: '鸡蛋', ms: 'Telur' },
+  eggs: { zh: '鸡蛋', ms: 'Telur' },
+  tofu: { zh: '豆腐', ms: 'Tauhu' },
+  bean: { zh: '豆类', ms: 'Kacang' },
+  beans: { zh: '豆类', ms: 'Kacang' },
+  lentil: { zh: '扁豆', ms: 'Lentil' },
+  milk: { zh: '牛奶', ms: 'Susu' },
+  yogurt: { zh: '酸奶', ms: 'Yogurt' },
+  cheese: { zh: '奶酪', ms: 'Keju' },
+  broccoli: { zh: '西兰花', ms: 'Brokoli' },
+  spinach: { zh: '菠菜', ms: 'Bayam' },
+  carrot: { zh: '胡萝卜', ms: 'Lobak merah' },
+  tomato: { zh: '番茄', ms: 'Tomato' },
+  cucumber: { zh: '黄瓜', ms: 'Timun' },
+  onion: { zh: '洋葱', ms: 'Bawang' },
+  garlic: { zh: '大蒜', ms: 'Bawang putih' },
+  cabbage: { zh: '卷心菜', ms: 'Kubis' },
+  lettuce: { zh: '生菜', ms: 'Salad' },
+  mushroom: { zh: '蘑菇', ms: 'Cendawan' },
+  corn: { zh: '玉米', ms: 'Jagung' },
+  pea: { zh: '豌豆', ms: 'Kacang pea' },
+  peas: { zh: '豌豆', ms: 'Kacang pea' },
+  banana: { zh: '香蕉', ms: 'Pisang' },
+  apple: { zh: '苹果', ms: 'Epal' },
+  orange: { zh: '橙子', ms: 'Oren' },
+  mango: { zh: '芒果', ms: 'Mangga' },
+  strawberry: { zh: '草莓', ms: 'Strawberi' },
+  berries: { zh: '莓果', ms: 'Beri' },
+  avocado: { zh: '牛油果', ms: 'Avokado' },
+  lemon: { zh: '柠檬', ms: 'Lemon' },
+  lime: { zh: '青柠', ms: 'Limau nipis' },
+  oil: { zh: '油', ms: 'Minyak' },
+  olive_oil: { zh: '橄榄油', ms: 'Minyak zaitun' },
+  butter: { zh: '黄油', ms: 'Mentega' },
+  salt: { zh: '盐', ms: 'Garam' },
+  sugar: { zh: '糖', ms: 'Gula' },
+  honey: { zh: '蜂蜜', ms: 'Madu' },
+  soy_sauce: { zh: '酱油', ms: 'Kicap' },
+  coconut_milk: { zh: '椰浆', ms: 'Santan' },
+};
+
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function translateIngredientName(name: string, language: string) {
+  if (language === 'en') return name;
+
+  const lower = name.toLowerCase();
+  const exact = INGREDIENT_TRANSLATIONS[normalizeKey(name)];
+
+  if (exact) {
+    return language === 'zh' ? exact.zh : exact.ms;
+  }
+
+  const entry = Object.entries(INGREDIENT_TRANSLATIONS).find(([key]) => {
+    const keyword = key.replace(/_/g, ' ');
+    return lower.includes(keyword) || lower.includes(keyword.replace(/s$/, ''));
+  });
+
+  if (!entry) return name;
+
+  return language === 'zh' ? entry[1].zh : entry[1].ms;
+}
+
+function getShoppingItemName(item: ShoppingItem, language: string) {
+  if (language === 'zh') {
+    return item.nameCn || translateIngredientName(item.name, language);
+  }
+
+  if (language === 'ms') {
+    return item.nameMs || translateIngredientName(item.name, language);
+  }
+
+  return item.name;
+}
+
+function getShoppingItemQuantity(item: ShoppingItem, language: string) {
+  if (language === 'zh') return item.quantityCn || item.quantity;
+  if (language === 'ms') return item.quantityMs || item.quantity;
+  return item.quantity;
+}
+
+function getShoppingItemSource(item: ShoppingItem, language: string) {
+  if (language === 'zh') return item.sourceCn || item.source;
+  if (language === 'ms') return item.sourceMs || item.source;
+  return item.source;
+}
+
 export default function ShoppingScreen() {
   const navigation = useNavigation<any>();
-  const { t, language } = useLanguage();
+  const { language } = useLanguage();
   const { activeChild, getOwnerKey } = useChildProfile();
 
   const ownerKey = getOwnerKey();
 
-  const [showLanguage, setShowLanguage] = useState(false);
   const [showSupermarkets, setShowSupermarkets] = useState(false);
   const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
 
-  const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
+  const getText = (en: string, zh: string, ms: string) => {
+    if (language === 'zh') return zh;
+    if (language === 'ms') return ms;
+    return en;
+  };
 
   const loadShoppingList = useCallback(async () => {
     try {
@@ -191,14 +310,14 @@ export default function ShoppingScreen() {
       const supported = await Linking.canOpenURL(url);
 
       if (!supported) {
-        Alert.alert('Cannot Open Maps', 'Unable to open Google Maps.');
+        Alert.alert(getText('Cannot Open Maps', '无法打开地图', 'Tidak Dapat Buka Peta'), getText('Unable to open Google Maps.', '无法打开 Google Maps。', 'Tidak dapat membuka Google Maps.'));
         return;
       }
 
       await Linking.openURL(url);
     } catch (error) {
       console.log('Open Google Maps failed:', error);
-      Alert.alert('Error', 'Unable to open Google Maps.');
+      Alert.alert(getText('Error', '错误', 'Ralat'), getText('Unable to open Google Maps.', '无法打开 Google Maps。', 'Tidak dapat membuka Google Maps.'));
     }
   };
 
@@ -221,7 +340,7 @@ export default function ShoppingScreen() {
       try {
         await Linking.openURL(grabMartUrl);
       } catch {
-        Alert.alert('Error', 'Unable to open Grab.');
+        Alert.alert(getText('Error', '错误', 'Ralat'), getText('Unable to open Grab.', '无法打开 Grab。', 'Tidak dapat membuka Grab.'));
       }
     }
   };
@@ -239,10 +358,10 @@ export default function ShoppingScreen() {
   const percent = totalCount ? Math.round((checkedCount / totalCount) * 100) : 0;
 
   const categoryNames: Record<ShoppingCategory, string> = {
-    vegetables: t('vegetables') || 'Vegetables',
-    protein: t('protein') || 'Protein',
-    carbs: t('carbs') || 'Carbs',
-    others: 'Others',
+    vegetables: getText('Vegetables', '蔬菜', 'Sayur-sayuran'),
+    protein: getText('Protein', '蛋白质', 'Protein'),
+    carbs: getText('Carbs', '碳水', 'Karbohidrat'),
+    others: getText('Others', '其他', 'Lain-lain'),
   };
 
   const categoryOrder: ShoppingCategory[] = [
@@ -256,21 +375,21 @@ export default function ShoppingScreen() {
     <>
       <Screen padded={false}>
         <Header
-          title="Shopping"
+          title={getText('Shopping', '购物清单', 'Senarai Beli-belah')}
           subtitle={
             activeChild
-              ? `${activeChild.nickname}'s ingredients`
-              : 'Guest ingredients from meal plan'
+              ? getText(
+                  `${activeChild.nickname}'s ingredients`,
+                  `${activeChild.nickname}的食材`,
+                  `Bahan untuk ${activeChild.nickname}`
+                )
+              : getText(
+                  'Guest ingredients from meal plan',
+                  '访客膳食计划食材',
+                  'Bahan tetamu daripada pelan makanan'
+                )
           }
           icon="cart"
-          right={
-            <Pressable
-              style={styles.langButton}
-              onPress={() => setShowLanguage(true)}
-            >
-              <Text style={styles.langText}>{langCode}</Text>
-            </Pressable>
-          }
         />
 
         <ScrollView
@@ -288,9 +407,9 @@ export default function ShoppingScreen() {
               </View>
 
               <View style={styles.supermarketInfo}>
-                <Text style={styles.supermarketTitle}>Nearby Supermarkets</Text>
+                <Text style={styles.supermarketTitle}>{getText('Nearby Supermarkets', '附近超市', 'Pasar Raya Berdekatan')}</Text>
                 <Text style={styles.supermarketSubtitle}>
-                  Find ingredients in stores near you or order with GrabMart.
+                  {getText('Find ingredients in stores near you or order with GrabMart.', '查找附近商店的食材，或使用 GrabMart 下单。', 'Cari bahan di kedai berdekatan atau pesan dengan GrabMart.')}
                 </Text>
               </View>
             </View>
@@ -301,12 +420,12 @@ export default function ShoppingScreen() {
                 onPress={() => setShowSupermarkets(true)}
               >
                 <Ionicons name="location-outline" size={17} color="#FFFFFF" />
-                <Text style={styles.nearbyButtonText}>Find Nearby</Text>
+                <Text style={styles.nearbyButtonText}>{getText('Find Nearby', '查找附近', 'Cari Berdekatan')}</Text>
               </Pressable>
 
               <Pressable style={styles.grabButton} onPress={openGrabMart}>
                 <Ionicons name="bag-handle-outline" size={17} color="#12A150" />
-                <Text style={styles.grabButtonText}>Open GrabMart</Text>
+                <Text style={styles.grabButtonText}>{getText('Open GrabMart', '打开 GrabMart', 'Buka GrabMart')}</Text>
               </Pressable>
             </View>
           </Card>
@@ -314,11 +433,11 @@ export default function ShoppingScreen() {
           {totalCount === 0 ? (
             <EmptyState
               emoji="🛒"
-              title="No shopping items yet"
-              subtitle="Add recipes to your Meal Plan first. Ingredients will automatically appear here."
+              title={getText('No shopping items yet', '还没有购物食材', 'Belum ada item belian')}
+              subtitle={getText('Add recipes to your Meal Plan first. Ingredients will automatically appear here.', '先把食谱加入膳食计划，食材会自动出现在这里。', 'Tambah resipi ke Pelan Makanan dahulu. Bahan akan muncul secara automatik di sini.')}
               action={
                 <PrimaryButton
-                  title="Go to Meal Plan"
+                  title={getText('Go to Meal Plan', '前往膳食计划', 'Pergi ke Pelan Makanan')}
                   icon="restaurant"
                   onPress={() => navigation.navigate('Meal')}
                 />
@@ -329,11 +448,19 @@ export default function ShoppingScreen() {
               <Card>
                 <View style={styles.progressHeader}>
                   <View>
-                    <Text style={styles.cardTitle}>Shopping List</Text>
+                    <Text style={styles.cardTitle}>{getText('Shopping List', '购物清单', 'Senarai Beli-belah')}</Text>
                     <Text style={styles.cardSub}>
                       {activeChild
-                        ? `Generated from ${activeChild.nickname}'s Meal Plan`
-                        : 'Generated from Guest Meal Plan'}
+                        ? getText(
+                            `Generated from ${activeChild.nickname}'s Meal Plan`,
+                            `来自${activeChild.nickname}的膳食计划`,
+                            `Dijana daripada Pelan Makanan ${activeChild.nickname}`
+                          )
+                        : getText(
+                            'Generated from Guest Meal Plan',
+                            '来自访客膳食计划',
+                            'Dijana daripada Pelan Makanan Tetamu'
+                          )}
                     </Text>
                   </View>
 
@@ -347,7 +474,7 @@ export default function ShoppingScreen() {
                 </View>
 
                 <Text style={styles.progressText}>
-                  {checkedCount} / {totalCount} checked
+                  {getText(`${checkedCount} / ${totalCount} checked`, `${checkedCount} / ${totalCount} 已勾选`, `${checkedCount} / ${totalCount} ditanda`)}
                 </Text>
 
                 <View style={styles.actionRow}>
@@ -357,7 +484,7 @@ export default function ShoppingScreen() {
                       size={16}
                       color={colors.primaryDark}
                     />
-                    <Text style={styles.secondaryButtonText}>Reset</Text>
+                    <Text style={styles.secondaryButtonText}>{getText('Reset', '重置', 'Tetapkan Semula')}</Text>
                   </Pressable>
 
                   <Pressable
@@ -365,7 +492,7 @@ export default function ShoppingScreen() {
                     onPress={clearCheckedItems}
                   >
                     <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                    <Text style={styles.dangerButtonText}>Clear Checked</Text>
+                    <Text style={styles.dangerButtonText}>{getText('Clear Checked', '清除已勾选', 'Kosongkan Yang Ditanda')}</Text>
                   </Pressable>
                 </View>
               </Card>
@@ -400,17 +527,17 @@ export default function ShoppingScreen() {
                               item.checked && styles.itemNameDone,
                             ]}
                           >
-                            {item.name}
+                            {getShoppingItemName(item, language)}
                           </Text>
 
                           {!!item.quantity && (
                             <Text style={styles.itemQuantity}>
-                              {item.quantity}
+                              {getShoppingItemQuantity(item, language)}
                             </Text>
                           )}
 
                           <Text style={styles.itemSource} numberOfLines={2}>
-                            {item.source}
+                            {getShoppingItemSource(item, language)}
                           </Text>
                         </View>
 
@@ -452,9 +579,9 @@ export default function ShoppingScreen() {
 
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalTitle}>Nearby Supermarkets</Text>
+                <Text style={styles.modalTitle}>{getText('Nearby Supermarkets', '附近超市', 'Pasar Raya Berdekatan')}</Text>
                 <Text style={styles.modalSubtitle}>
-                  Tap a store to open it in Google Maps.
+                  {getText('Tap a store to open it in Google Maps.', '点击商店即可在 Google Maps 打开。', 'Ketik kedai untuk buka dalam Google Maps.')}
                 </Text>
               </View>
 
@@ -501,17 +628,13 @@ export default function ShoppingScreen() {
             <View style={styles.modalFooter}>
               <Pressable style={styles.modalGrabButton} onPress={openGrabMart}>
                 <Ionicons name="bag-handle" size={18} color="#FFFFFF" />
-                <Text style={styles.modalGrabButtonText}>Open GrabMart</Text>
+                <Text style={styles.modalGrabButtonText}>{getText('Open GrabMart', '打开 GrabMart', 'Buka GrabMart')}</Text>
               </Pressable>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
 
-      <LanguageModal
-        visible={showLanguage}
-        onClose={() => setShowLanguage(false)}
-      />
     </>
   );
 }

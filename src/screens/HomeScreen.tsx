@@ -78,6 +78,7 @@ export default function HomeScreen() {
   const [showTopicModal, setShowTopicModal] = useState(false);
 
   const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
+  const locale = language === 'zh' ? 'zh-CN' : language === 'ms' ? 'ms-MY' : 'en-US';
 
   const allGoalsMet =
     nutritionProgress.carbs.current >= nutritionProgress.carbs.target &&
@@ -86,12 +87,12 @@ export default function HomeScreen() {
 
   const lastCheckDate = useMemo(
     () =>
-      new Date().toLocaleDateString('en-MY', {
+      new Date().toLocaleDateString(locale, {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
       }),
-    []
+    [locale]
   );
 
   const getText = (en: string, zh: string, ms: string) => {
@@ -102,6 +103,82 @@ export default function HomeScreen() {
 
   const getChildChipLabel = (child: any) => {
     return child.avatarImageUri ? child.nickname : `${child.avatar} ${child.nickname}`;
+  };
+
+
+  const getStatusLabel = (status?: string | null) => {
+    const value = String(status || 'Normal').toLowerCase();
+
+    if (value.includes('under')) {
+      return getText('Underweight', '偏瘦', 'Kurang Berat');
+    }
+
+    if (value.includes('over')) {
+      return getText('Overweight', '偏重', 'Berat Berlebihan');
+    }
+
+    if (value.includes('obese')) {
+      return getText('Obese', '肥胖', 'Obes');
+    }
+
+    if (value.includes('risk')) {
+      return getText('At Risk', '需注意', 'Berisiko');
+    }
+
+    return getText('Normal', '正常', 'Normal');
+  };
+
+  const getTwinNickname = () => {
+    const name = activeChild?.nickname || getText('Child', '小孩', 'Anak');
+    return getText(`${name}'s Twin`, `${name}的数字分身`, `Digital Twin ${name}`);
+  };
+
+  const getTwinTip = () => {
+    if (!activeChild) {
+      return getText(
+        'Create a child profile to unlock personalized health tips.',
+        '创建小孩档案后，可以获得个性化健康建议。',
+        'Cipta profil kanak-kanak untuk mendapatkan tip kesihatan peribadi.'
+      );
+    }
+
+    if (allGoalsMet) {
+      return getText(
+        'Great job! Today’s carbs, protein and fat goals are all on track.',
+        '太棒了！今天的碳水、蛋白质和脂肪目标都完成得不错。',
+        'Bagus! Sasaran karbohidrat, protein dan lemak hari ini berada di landasan yang baik.'
+      );
+    }
+
+    if (nutritionProgress.protein.current < nutritionProgress.protein.target) {
+      return getText(
+        'Protein is a little low today. Try adding egg, fish, chicken, tofu or yogurt.',
+        '今天蛋白质有点不足，可以加鸡蛋、鱼、鸡肉、豆腐或酸奶。',
+        'Protein hari ini agak rendah. Cuba tambah telur, ikan, ayam, tauhu atau yogurt.'
+      );
+    }
+
+    if (nutritionProgress.carbs.current < nutritionProgress.carbs.target) {
+      return getText(
+        'Carbs are still low today. Rice, oats, bread, noodles or fruit can help provide energy.',
+        '今天碳水还偏少，可以搭配米饭、燕麦、面包、面条或水果补充能量。',
+        'Karbohidrat hari ini masih rendah. Nasi, oat, roti, mi atau buah boleh membantu memberi tenaga.'
+      );
+    }
+
+    if (nutritionProgress.fat.current < nutritionProgress.fat.target) {
+      return getText(
+        'Healthy fats are a little low. Add avocado, nuts, egg, fish or olive oil in a child-sized portion.',
+        '健康脂肪有点不足，可以少量加入牛油果、坚果、鸡蛋、鱼或橄榄油。',
+        'Lemak sihat agak rendah. Tambah avokado, kekacang, telur, ikan atau minyak zaitun dalam hidangan sesuai untuk kanak-kanak.'
+      );
+    }
+
+    return getText(
+      'Try to keep today’s meals balanced with vegetables, protein and whole grains.',
+      '今天尽量让餐食包含蔬菜、蛋白质和全谷物，保持均衡。',
+      'Cuba pastikan hidangan hari ini seimbang dengan sayur, protein dan bijirin penuh.'
+    );
   };
 
   useEffect(() => {
@@ -456,7 +533,7 @@ export default function HomeScreen() {
 
                   <View style={styles.statusBadge}>
                     <Text style={styles.statusBadgeText}>
-                      {activeChild.status || 'Normal'}
+                      {getStatusLabel(activeChild.status)}
                     </Text>
                   </View>
                 </View>
@@ -485,7 +562,7 @@ export default function HomeScreen() {
                   >
                     <Ionicons name="sparkles" size={16} color="#FFFFFF" />
                     <Text style={styles.mealPlanButtonText}>
-                      AI Meal Plan
+                      {getText('AI Meal Plan', 'AI 膳食计划', 'Pelan Makanan AI')}
                     </Text>
                   </Pressable>
 
@@ -506,8 +583,8 @@ export default function HomeScreen() {
               </Card>
 
               <DigitalTwin
-                tip={getTip()}
-                nickname={`${activeChild.nickname}'s Twin`}
+                tip={getTwinTip()}
+                nickname={getTwinNickname()}
                 isComplete={allGoalsMet}
               />
             </>

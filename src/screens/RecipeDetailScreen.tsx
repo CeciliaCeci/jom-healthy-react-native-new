@@ -41,15 +41,55 @@ type MealRecipe = {
   id?: string | number;
   idMeal?: string | number;
   strMeal?: string;
+  strMealEn?: string | null;
+  strMealCn?: string | null;
+  strMealCN?: string | null;
+  strMealZh?: string | null;
+  strMealMs?: string | null;
   name?: string;
+  nameEn?: string | null;
+  nameCn?: string | null;
+  nameCN?: string | null;
+  nameZh?: string | null;
+  nameMs?: string | null;
   type?: string;
   strMealAlternate?: string | null;
   strCategory?: string | null;
+  strCategoryEn?: string | null;
+  strCategoryCn?: string | null;
+  strCategoryCN?: string | null;
+  strCategoryZh?: string | null;
+  strCategoryMs?: string | null;
   category?: string | null;
+  categoryEn?: string | null;
+  categoryCn?: string | null;
+  categoryCN?: string | null;
+  categoryZh?: string | null;
+  categoryMs?: string | null;
   strArea?: string | null;
+  strAreaEn?: string | null;
+  strAreaCn?: string | null;
+  strAreaCN?: string | null;
+  strAreaZh?: string | null;
+  strAreaMs?: string | null;
   area?: string | null;
+  areaEn?: string | null;
+  areaCn?: string | null;
+  areaCN?: string | null;
+  areaZh?: string | null;
+  areaMs?: string | null;
   strInstructions?: string | null;
+  strInstructionsEn?: string | null;
+  strInstructionsCn?: string | null;
+  strInstructionsCN?: string | null;
+  strInstructionsZh?: string | null;
+  strInstructionsMs?: string | null;
   instructions?: string | null;
+  instructionsEn?: string | null;
+  instructionsCn?: string | null;
+  instructionsCN?: string | null;
+  instructionsZh?: string | null;
+  instructionsMs?: string | null;
   steps?: string[];
   strMealThumb?: string | null;
   imageUrl?: string | null;
@@ -211,6 +251,86 @@ function splitInstructions(value?: string | null, steps?: string[]) {
   return [String(value).trim()];
 }
 
+function normalizeLanguageCode(language?: string | null) {
+  const text = String(language || 'en').toLowerCase();
+
+  if (text === 'zh' || text === 'cn' || text.startsWith('zh-') || text.includes('chinese')) {
+    return 'zh';
+  }
+
+  if (text === 'ms' || text === 'my' || text.startsWith('ms-') || text.includes('malay')) {
+    return 'ms';
+  }
+
+  return 'en';
+}
+
+function cleanLocalizedValue(value: any) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  return text.length > 0 ? text : '';
+}
+
+function pickLocalizedValue(
+  language: string,
+  enValue?: any,
+  cnValue?: any,
+  msValue?: any,
+  fallback?: any
+) {
+  const lang = normalizeLanguageCode(language);
+
+  if (lang === 'zh') {
+    return cleanLocalizedValue(cnValue) || cleanLocalizedValue(enValue) || cleanLocalizedValue(msValue) || cleanLocalizedValue(fallback);
+  }
+
+  if (lang === 'ms') {
+    return cleanLocalizedValue(msValue) || cleanLocalizedValue(enValue) || cleanLocalizedValue(cnValue) || cleanLocalizedValue(fallback);
+  }
+
+  return cleanLocalizedValue(enValue) || cleanLocalizedValue(fallback) || cleanLocalizedValue(cnValue) || cleanLocalizedValue(msValue);
+}
+
+function getLocalizedMealName(meal: any, language: string, fallback: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strMealEn || meal?.nameEn || meal?.strMeal || meal?.name,
+    meal?.strMealCn || meal?.strMealCN || meal?.strMealZh || meal?.nameCn || meal?.nameCN || meal?.nameZh,
+    meal?.strMealMs || meal?.nameMs,
+    fallback
+  );
+}
+
+function getLocalizedMealCategory(meal: any, language: string, fallback: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strCategoryEn || meal?.categoryEn || meal?.strCategory || meal?.category || meal?.type,
+    meal?.strCategoryCn || meal?.strCategoryCN || meal?.strCategoryZh || meal?.categoryCn || meal?.categoryCN || meal?.categoryZh,
+    meal?.strCategoryMs || meal?.categoryMs,
+    fallback
+  );
+}
+
+function getLocalizedMealArea(meal: any, language: string, fallback: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strAreaEn || meal?.areaEn || meal?.strArea || meal?.area,
+    meal?.strAreaCn || meal?.strAreaCN || meal?.strAreaZh || meal?.areaCn || meal?.areaCN || meal?.areaZh,
+    meal?.strAreaMs || meal?.areaMs,
+    fallback
+  );
+}
+
+function getLocalizedInstructions(meal: any, language: string) {
+  return pickLocalizedValue(
+    language,
+    meal?.strInstructionsEn || meal?.instructionsEn || meal?.strInstructions || meal?.instructions,
+    meal?.strInstructionsCn || meal?.strInstructionsCN || meal?.strInstructionsZh || meal?.instructionsCn || meal?.instructionsCN || meal?.instructionsZh,
+    meal?.strInstructionsMs || meal?.instructionsMs,
+    meal?.strInstructions || meal?.instructions || ''
+  );
+}
+
 function normalizeMealType(category?: string | null, type?: string | null) {
   const text = `${category || ''} ${type || ''}`.toLowerCase();
 
@@ -237,15 +357,29 @@ export default function RecipeDetailScreen() {
   const meal = route.params?.meal as MealRecipe | undefined;
 
   const getText = (en: string, zh: string, ms: string) => {
-    if (language === 'zh') return zh;
-    if (language === 'ms') return ms;
+    const lang = normalizeLanguageCode(language);
+    if (lang === 'zh') return zh;
+    if (lang === 'ms') return ms;
     return en;
   };
 
-  const mealName = String(meal?.strMeal || meal?.name || getText('Recipe', '食谱', 'Resipi'));
-  const mealId = String(meal?.idMeal || meal?.id || mealName);
-  const category = String(meal?.strCategory || meal?.category || meal?.type || getText('Recipe', '食谱', 'Resipi'));
-  const area = String(meal?.strArea || meal?.area || '');
+  const mealName = getLocalizedMealName(meal, language, getText('Recipe', '食谱', 'Resipi'));
+  const mealNameEn = getLocalizedMealName(meal, 'en', mealName);
+  const mealNameCn = getLocalizedMealName(meal, 'zh', mealNameEn);
+  const mealNameMs = getLocalizedMealName(meal, 'ms', mealNameEn);
+  const mealId = String(meal?.idMeal || meal?.id || mealNameEn || mealName);
+  const category = getLocalizedMealCategory(meal, language, getText('Recipe', '食谱', 'Resipi'));
+  const categoryEn = getLocalizedMealCategory(meal, 'en', category);
+  const categoryCn = getLocalizedMealCategory(meal, 'zh', categoryEn);
+  const categoryMs = getLocalizedMealCategory(meal, 'ms', categoryEn);
+  const area = getLocalizedMealArea(meal, language, '');
+  const areaEn = getLocalizedMealArea(meal, 'en', area);
+  const areaCn = getLocalizedMealArea(meal, 'zh', areaEn);
+  const areaMs = getLocalizedMealArea(meal, 'ms', areaEn);
+  const instructionsText = getLocalizedInstructions(meal, language);
+  const instructionsEn = getLocalizedInstructions(meal, 'en');
+  const instructionsCn = getLocalizedInstructions(meal, 'zh');
+  const instructionsMs = getLocalizedInstructions(meal, 'ms');
   const imageUrl = isValidImageUrl(meal?.strMealThumb || meal?.imageUrl) ? String(meal?.strMealThumb || meal?.imageUrl) : '';
   const youtubeUrl = isValidYoutubeUrl(meal?.strYoutube || meal?.youtubeUrl) ? String(meal?.strYoutube || meal?.youtubeUrl) : '';
   const mealEmoji = meal?.mealIconEmoji || guessMealEmoji(mealName, category);
@@ -256,8 +390,8 @@ export default function RecipeDetailScreen() {
   const fat = safeNumber(meal?.totalFatG || meal?.fat);
 
   const instructions = useMemo(
-    () => splitInstructions(meal?.strInstructions || meal?.instructions, meal?.steps),
-    [meal?.strInstructions, meal?.instructions, meal?.steps]
+    () => splitInstructions(instructionsText, meal?.steps),
+    [instructionsText, meal?.steps]
   );
 
   const ingredients = useMemo(() => {
@@ -271,8 +405,26 @@ export default function RecipeDetailScreen() {
       id: mealId,
       idMeal: mealId,
       name: mealName,
-      strMeal: mealName,
-      type: normalizeMealType(category, meal?.type),
+      nameEn: mealNameEn,
+      nameCn: mealNameCn,
+      nameMs: mealNameMs,
+      strMeal: meal?.strMeal || mealNameEn,
+      strMealEn: meal?.strMealEn || meal?.strMeal || mealNameEn,
+      strMealCn: meal?.strMealCn || meal?.strMealCN || meal?.strMealZh || meal?.nameCn || meal?.nameCN || meal?.nameZh || mealNameCn,
+      strMealMs: meal?.strMealMs || meal?.nameMs || mealNameMs,
+      strCategory: meal?.strCategory || categoryEn,
+      strCategoryEn: meal?.strCategoryEn || meal?.strCategory || categoryEn,
+      strCategoryCn: meal?.strCategoryCn || meal?.strCategoryCN || meal?.strCategoryZh || meal?.categoryCn || meal?.categoryCN || meal?.categoryZh || categoryCn,
+      strCategoryMs: meal?.strCategoryMs || meal?.categoryMs || categoryMs,
+      strArea: meal?.strArea || meal?.strAreaEn || areaEn,
+      strAreaEn: meal?.strAreaEn || meal?.strArea || areaEn,
+      strAreaCn: meal?.strAreaCn || meal?.strAreaCN || meal?.strAreaZh || meal?.areaCn || meal?.areaCN || meal?.areaZh || areaCn,
+      strAreaMs: meal?.strAreaMs || meal?.areaMs || areaMs,
+      strInstructions: meal?.strInstructions || meal?.strInstructionsEn || instructionsEn,
+      strInstructionsEn: meal?.strInstructionsEn || meal?.strInstructions || instructionsEn,
+      strInstructionsCn: meal?.strInstructionsCn || meal?.strInstructionsCN || meal?.strInstructionsZh || meal?.instructionsCn || meal?.instructionsCN || meal?.instructionsZh || instructionsCn,
+      strInstructionsMs: meal?.strInstructionsMs || meal?.instructionsMs || instructionsMs,
+      type: normalizeMealType(categoryEn, meal?.type),
       imageUrl: imageUrl || undefined,
       strMealThumb: imageUrl || meal?.strMealThumb || '',
       mealIconEmoji: mealEmoji,
@@ -284,20 +436,18 @@ export default function RecipeDetailScreen() {
       totalFatG: fat,
       totalEnergyKcal: calories,
     };
-  }, [meal, mealId, mealName, category, imageUrl, mealEmoji, carbs, protein, fat, calories]);
+  }, [meal, mealId, mealName, mealNameEn, mealNameCn, mealNameMs, categoryEn, categoryCn, categoryMs, areaEn, areaCn, areaMs, instructionsEn, instructionsCn, instructionsMs, imageUrl, mealEmoji, carbs, protein, fat, calories]);
 
   const saved = typeof isRecipeSaved === 'function' ? isRecipeSaved(saveableMeal.id) : false;
 
   const getIngredientName = (item: Ingredient) => {
-    if (language === 'zh') {
-      return item.foodNameCn || item.ingredientName || item.name || item.foodNameEn || item.foodNameMs || getText('Ingredient', '食材', 'Bahan');
-    }
-
-    if (language === 'ms') {
-      return item.foodNameMs || item.ingredientName || item.name || item.foodNameEn || item.foodNameCn || getText('Ingredient', '食材', 'Bahan');
-    }
-
-    return item.foodNameEn || item.ingredientName || item.name || item.foodNameMs || item.foodNameCn || getText('Ingredient', '食材', 'Bahan');
+    return pickLocalizedValue(
+      language,
+      item.foodNameEn || item.name || item.ingredientName,
+      item.foodNameCn || (item as any).foodNameCN || (item as any).foodNameZh,
+      item.foodNameMs,
+      getText('Ingredient', '食材', 'Bahan')
+    );
   };
 
   const getIngredientMeasure = (item: Ingredient) => {
