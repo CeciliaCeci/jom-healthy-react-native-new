@@ -159,6 +159,16 @@ function formatDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function parseDateKey(dateKey: string) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+
+  if (!year || !month || !day) {
+    return new Date();
+  }
+
+  return new Date(year, month - 1, day);
+}
+
 function addDays(date: Date, offset: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + offset);
@@ -524,6 +534,14 @@ function normalizeDayPlan(dayPlan: any): MealPlanForDay {
   return normalized;
 }
 
+function cloneMealPlanForCopy(dayPlan: MealPlanForDay): MealPlanForDay {
+  try {
+    return normalizeDayPlan(JSON.parse(JSON.stringify(dayPlan || {})));
+  } catch {
+    return normalizeDayPlan(dayPlan || {});
+  }
+}
+
 function normalizeMealPlansByOwner(raw: any): Record<string, Record<string, MealPlanForDay>> {
   const normalized: Record<string, Record<string, MealPlanForDay>> = {};
 
@@ -665,7 +683,13 @@ function CalendarDateCell({
   isToday,
   status,
   progress,
+  isCopySource,
+  isCopyTarget,
   onPress,
+  onLongPress,
+  onPressOut,
+  setCellRef,
+  onLayout,
 }: {
   date: Date;
   isCurrentMonth: boolean;
@@ -673,7 +697,13 @@ function CalendarDateCell({
   isToday: boolean;
   status: CalendarNutritionStatus;
   progress: number;
+  isCopySource?: boolean;
+  isCopyTarget?: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
+  onPressOut?: (event: any) => void;
+  setCellRef?: (node: any) => void;
+  onLayout?: () => void;
 }) {
   const hasStatus = status !== 'none';
   const statusColor = STATUS_COLORS[status];
@@ -684,8 +714,16 @@ function CalendarDateCell({
   const dashOffset = circumference * (1 - Math.min(progress, 1));
 
   return (
-    <Pressable style={styles.calendarCell} onPress={onPress}>
-      <View style={styles.calendarDateWrap}>
+    <Pressable
+      ref={setCellRef as any}
+      style={styles.calendarCell}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressOut={onPressOut}
+      onLayout={onLayout}
+      delayLongPress={420}
+    >
+      <View style={[styles.calendarDateWrap, isCopySource && styles.calendarDateWrapCopySource, isCopyTarget && styles.calendarDateWrapCopyTarget]}>
         {hasStatus && !isSelected ? (
           <>
             <Svg width={size} height={size} style={styles.calendarRingSvg}>
@@ -757,6 +795,8 @@ export default function MealScreen() {
   };
 
   const dateStripRef = useRef<ScrollView>(null);
+  const dateCardRefs = useRef<Record<string, any>>({});
+  const dateCardLayoutsRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>({});
 
   const [selectedDate, setSelectedDate] = useState(today);
   const [dateStripStart, setDateStripStart] = useState(getWeekStart(today));
@@ -769,6 +809,8 @@ export default function MealScreen() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [allMealPlans, setAllMealPlans] = useState<Record<string, Record<string, MealPlanForDay>>>({});
   const [mealPlansLoaded, setMealPlansLoaded] = useState(false);
+  const [copySourceKey, setCopySourceKey] = useState<string | null>(null);
+  const [copyTargetKeys, setCopyTargetKeys] = useState<string[]>([]);
 
   const selectedKey = formatDateKey(selectedDate);
   const todayKey = formatDateKey(today);
@@ -791,6 +833,49 @@ export default function MealScreen() {
 
   const totals = useMemo(() => getMealPlanTotals(selectedDayPlan), [selectedDayPlan]);
 
+  const setDateCardRef = useCallback((dateKey: string, node: any) => {
+    if (node) {
+      dateCardRefs.current[dateKey] = node;
+    } else {
+      delete dateCardRefs.current[dateKey];
+      delete dateCardLayoutsRef.current[dateKey];
+    }
+  }, []);
+
+  const measureDateCard = useCallback((dateKey: string) => {
+    requestAnimationFrame(() => {
+      const node = dateCardRefs.current[dateKey];
+
+      if (node && typeof node.measureInWindow === 'function') {
+        node.measureInWindow((x: number, y: number, width: number, height: number) => {
+          dateCardLayoutsRef.current[dateKey] = { x, y, width, height };
+        });
+      }
+    });
+  }, []);
+
+  const findDateKeyFromScreenPoint = useCallback((pageX?: number, pageY?: number) => {
+    if (pageX === undefined || pageY === undefined) return null;
+
+    const entries = Object.entries(dateCardLayoutsRef.current);
+    const matched = entries.find(([, rect]) => (
+      pageX >= rect.x &&
+      pageX <= rect.x + rect.width &&
+      pageY >= rect.y &&
+      pageY <= rect.y + rect.height
+    ));
+
+    return matched?.[0] || null;
+  }, []);
+
+  const formatCopyDateLabel = useCallback((dateKey: string) => {
+    return parseDateKey(dateKey).toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }, [locale]);
+
   const loadStoredMealPlans = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(MEAL_PLANS_STORAGE_KEY);
@@ -807,8 +892,6 @@ export default function MealScreen() {
       setMealPlansLoaded(true);
     }
   }, []);
-
-  
 
   useFocusEffect(
     useCallback(() => {
@@ -881,6 +964,158 @@ export default function MealScreen() {
       return { ...prev, [ownerKey]: updater(currentOwnerPlans) };
     });
   };
+
+  const dayHasMealPlan = useCallback((dateKey: string) => {
+    const dayPlan = mealPlans[dateKey];
+    return SLOT_ORDER.some((slot) => !!dayPlan?.[slot]);
+  }, [mealPlans]);
+
+  const startCopyMealPlan = useCallback((date: Date) => {
+    const sourceKey = formatDateKey(date);
+
+    if (!dayHasMealPlan(sourceKey)) {
+      Alert.alert(
+        getText('No Meal Plan', '没有膳食计划', 'Tiada Pelan Makanan'),
+        getText('This date does not have a meal plan to copy.', '这个日期没有可以复制的膳食计划。', 'Tarikh ini tiada pelan makanan untuk disalin.')
+      );
+      return;
+    }
+
+    setCopySourceKey(sourceKey);
+    setCopyTargetKeys([]);
+  }, [dayHasMealPlan]);
+
+  const cancelCopyMealPlan = useCallback(() => {
+    setCopySourceKey(null);
+    setCopyTargetKeys([]);
+  }, []);
+
+  const toggleCopyTargetDate = useCallback((date: Date) => {
+    if (!copySourceKey) return;
+
+    const targetKey = formatDateKey(date);
+
+    if (targetKey === copySourceKey) {
+      return;
+    }
+
+    setCopyTargetKeys((prev) => (
+      prev.includes(targetKey)
+        ? prev.filter((item) => item !== targetKey)
+        : [...prev, targetKey]
+    ));
+  }, [copySourceKey]);
+
+  const addCopyTargetByKey = useCallback((targetKey: string) => {
+    if (!copySourceKey || targetKey === copySourceKey) return;
+
+    setCopyTargetKeys((prev) => (
+      prev.includes(targetKey) ? prev : [...prev, targetKey]
+    ));
+  }, [copySourceKey]);
+
+  const confirmCopyMealPlanToTargets = useCallback((targetKeys: string[] = copyTargetKeys, closeCalendarAfterCopy = false) => {
+    if (!copySourceKey) return;
+
+    const uniqueTargets = Array.from(new Set(targetKeys)).filter((key) => key && key !== copySourceKey);
+
+    if (uniqueTargets.length === 0) {
+      Alert.alert(
+        getText('Choose target dates', '请选择目标日期', 'Pilih tarikh sasaran'),
+        getText('Select one or more dates to copy this meal plan to.', '请选择一个或多个要复制到的日期。', 'Pilih satu atau lebih tarikh untuk menyalin pelan makanan ini.')
+      );
+      return;
+    }
+
+    const sourcePlan = mealPlans[copySourceKey];
+
+    if (!SLOT_ORDER.some((slot) => !!sourcePlan?.[slot])) {
+      Alert.alert(
+        getText('No Meal Plan', '没有膳食计划', 'Tiada Pelan Makanan'),
+        getText('The source date does not have a meal plan to copy.', '来源日期没有可以复制的膳食计划。', 'Tarikh sumber tiada pelan makanan untuk disalin.')
+      );
+      cancelCopyMealPlan();
+      return;
+    }
+
+    const sourceLabel = formatCopyDateLabel(copySourceKey);
+    const targetLabels = uniqueTargets.map(formatCopyDateLabel).join(', ');
+    const overwriteCount = uniqueTargets.filter(dayHasMealPlan).length;
+
+    Alert.alert(
+      getText('Copy Meal Plan', '复制膳食计划', 'Salin Pelan Makanan'),
+      overwriteCount > 0
+        ? getText(
+            `Copy meal plan from ${sourceLabel} to ${uniqueTargets.length} selected date(s): ${targetLabels}? ${overwriteCount} target date(s) already have a plan and will be replaced.`,
+            `要将 ${sourceLabel} 的膳食计划复制到已选择的 ${uniqueTargets.length} 个日期吗：${targetLabels}？其中 ${overwriteCount} 个日期已有计划，会被替换。`,
+            `Salin pelan makanan dari ${sourceLabel} ke ${uniqueTargets.length} tarikh dipilih: ${targetLabels}? ${overwriteCount} tarikh sasaran sudah ada pelan dan akan digantikan.`
+          )
+        : getText(
+            `Copy meal plan from ${sourceLabel} to ${uniqueTargets.length} selected date(s): ${targetLabels}?`,
+            `要将 ${sourceLabel} 的膳食计划复制到已选择的 ${uniqueTargets.length} 个日期吗：${targetLabels}？`,
+            `Salin pelan makanan dari ${sourceLabel} ke ${uniqueTargets.length} tarikh dipilih: ${targetLabels}?`
+          ),
+      [
+        {
+          text: getText('Cancel', '取消', 'Batal'),
+          style: 'cancel',
+        },
+        {
+          text: getText('Confirm', '确认', 'Sahkan'),
+          onPress: () => {
+            updateCurrentOwnerMealPlans((prev) => {
+              const source = prev[copySourceKey] || sourcePlan;
+              const next = { ...prev };
+
+              uniqueTargets.forEach((targetKey) => {
+                next[targetKey] = cloneMealPlanForCopy(source);
+              });
+
+              return next;
+            });
+
+            const lastTargetDate = parseDateKey(uniqueTargets[uniqueTargets.length - 1]);
+            setSelectedDate(lastTargetDate);
+            setDateStripStart(getWeekStart(lastTargetDate));
+            setCalendarMonth(lastTargetDate);
+
+            if (closeCalendarAfterCopy) {
+              setShowCalendar(false);
+            }
+
+            cancelCopyMealPlan();
+          },
+        },
+      ]
+    );
+  }, [cancelCopyMealPlan, copySourceKey, copyTargetKeys, dayHasMealPlan, formatCopyDateLabel, mealPlans]);
+
+  const handleDatePress = useCallback((date: Date, closeCalendarAfterCopy = false) => {
+    if (copySourceKey) {
+      toggleCopyTargetDate(date);
+      return;
+    }
+
+    if (closeCalendarAfterCopy) {
+      setSelectedDate(date);
+      setDateStripStart(getWeekStart(date));
+      setCalendarMonth(date);
+      setShowCalendar(false);
+      return;
+    }
+
+    setSelectedDate(date);
+  }, [copySourceKey, toggleCopyTargetDate]);
+
+  const handleCopyPressOut = useCallback((sourceKey: string, event: any) => {
+    if (copySourceKey !== sourceKey) return;
+
+    const targetKey = findDateKeyFromScreenPoint(event?.nativeEvent?.pageX, event?.nativeEvent?.pageY);
+
+    if (!targetKey || targetKey === sourceKey) return;
+
+    addCopyTargetByKey(targetKey);
+  }, [addCopyTargetByKey, copySourceKey, findDateKeyFromScreenPoint]);
 
   const addMealToPlan = (meal: MealRecipe) => {
     const normalizedMeal = normalizeAiMeal(meal);
@@ -1064,7 +1299,11 @@ export default function MealScreen() {
     <Screen padded={false}>
       <Header title={getText('Meal Plan', '膳食计划', 'Pelan Makanan')} subtitle={activeChild ? `${activeChild.nickname}${getText("'s meal plan", '的膳食计划', ' punya pelan makanan')}` : getText('Guest meal plan', '访客膳食计划', 'Pelan makanan tetamu')} icon="restaurant" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+      >
         <View style={styles.searchOuterCard}>
           <View style={styles.searchInnerCard}>
             <Ionicons name="search" size={20} color="#63B987" />
@@ -1134,18 +1373,26 @@ export default function MealScreen() {
               const statusInfo = getCalendarStatus(mealPlans[key], currentTargets);
               const hasPlanStatus = statusInfo.status !== 'none';
               const fillColor = hasPlanStatus ? STATUS_COLORS[statusInfo.status] : undefined;
-              const activeText = isSelected || hasPlanStatus;
+              const isCopyTarget = copyTargetKeys.includes(key);
+              const activeText = isSelected || hasPlanStatus || isCopyTarget;
 
               return (
                 <Pressable
                   key={key}
+                  ref={(node) => setDateCardRef(key, node)}
+                  onLayout={() => measureDateCard(key)}
                   style={[
                     styles.dateCard,
                     hasPlanStatus && { backgroundColor: fillColor },
                     isSelected && !hasPlanStatus && styles.dateCardActive,
                     isSelected && hasPlanStatus && styles.dateCardSelectedWithPlan,
+                    copySourceKey === key && styles.dateCardCopySource,
+                    copyTargetKeys.includes(key) && styles.dateCardCopyTarget,
                   ]}
-                  onPress={() => setSelectedDate(date)}
+                  onPress={() => handleDatePress(date)}
+                  onLongPress={() => startCopyMealPlan(date)}
+                  onPressOut={(event) => handleCopyPressOut(key, event)}
+                  delayLongPress={420}
                 >
                   <Text style={[styles.dateDay, activeText && styles.dateTextActive]}>
                     {date.toLocaleDateString(locale, { weekday: 'short' })}
@@ -1162,6 +1409,28 @@ export default function MealScreen() {
             <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.good }]} /><Text style={styles.dateLegendText}>{getText('Good', '正常', 'Baik')}</Text></View>
             <View style={styles.dateLegendItem}><View style={[styles.dateLegendDot, { backgroundColor: STATUS_COLORS.tooLittle }]} /><Text style={styles.dateLegendText}>{getText('Too little', '吃少了', 'Terlalu Sedikit')}</Text></View>
           </View>
+
+          {copySourceKey && (
+            <View style={styles.copyModeBanner}>
+              <Ionicons name="copy-outline" size={16} color={colors.primaryDark} />
+              <Text style={styles.copyModeText}>
+                {getText(
+                  `Copying ${formatCopyDateLabel(copySourceKey)}. Tap multiple target dates, then confirm. Selected: ${copyTargetKeys.length}`,
+                  `正在复制 ${formatCopyDateLabel(copySourceKey)}，可点选多个目标日期后确认。已选：${copyTargetKeys.length}`,
+                  `Sedang menyalin ${formatCopyDateLabel(copySourceKey)}. Ketik beberapa tarikh sasaran, kemudian sahkan. Dipilih: ${copyTargetKeys.length}`
+                )}
+              </Text>
+              <Pressable
+                style={[styles.copyConfirmButton, copyTargetKeys.length === 0 && styles.copyConfirmButtonDisabled]}
+                onPress={() => confirmCopyMealPlanToTargets(copyTargetKeys, false)}
+              >
+                <Text style={styles.copyConfirmText}>{getText('Confirm', '确认', 'Sahkan')}</Text>
+              </Pressable>
+              <Pressable style={styles.copyCancelButton} onPress={cancelCopyMealPlan}>
+                <Text style={styles.copyCancelText}>{getText('Cancel', '取消', 'Batal')}</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         <View style={styles.nutritionCard}>
@@ -1239,6 +1508,28 @@ export default function MealScreen() {
               </Pressable>
             </View>
 
+            {copySourceKey && (
+              <View style={styles.calendarCopyBanner}>
+                <Ionicons name="copy-outline" size={15} color={colors.primaryDark} />
+                <Text style={styles.calendarCopyText}>
+                  {getText(
+                    `Copying ${formatCopyDateLabel(copySourceKey)}. Tap multiple dates. Selected: ${copyTargetKeys.length}`,
+                    `正在复制 ${formatCopyDateLabel(copySourceKey)}，可点选多个日期。已选：${copyTargetKeys.length}`,
+                    `Sedang menyalin ${formatCopyDateLabel(copySourceKey)}. Ketik beberapa tarikh. Dipilih: ${copyTargetKeys.length}`
+                  )}
+                </Text>
+                <Pressable
+                  style={[styles.calendarCopyConfirmButton, copyTargetKeys.length === 0 && styles.copyConfirmButtonDisabled]}
+                  onPress={() => confirmCopyMealPlanToTargets(copyTargetKeys, true)}
+                >
+                  <Text style={styles.calendarCopyConfirmText}>{getText('Confirm', '确认', 'Sahkan')}</Text>
+                </Pressable>
+                <Pressable onPress={cancelCopyMealPlan}>
+                  <Text style={styles.calendarCopyCancelText}>{getText('Cancel', '取消', 'Batal')}</Text>
+                </Pressable>
+              </View>
+            )}
+
             <View style={styles.weekRow}>
               {[getText('Mon', '周一', 'Isn'), getText('Tue', '周二', 'Sel'), getText('Wed', '周三', 'Rab'), getText('Thu', '周四', 'Kha'), getText('Fri', '周五', 'Jum'), getText('Sat', '周六', 'Sab'), getText('Sun', '周日', 'Aha')].map((day) => <Text key={day} style={styles.weekText}>{day}</Text>)}
             </View>
@@ -1261,7 +1552,13 @@ export default function MealScreen() {
                         isToday={isToday}
                         status={statusInfo.status}
                         progress={statusInfo.progress}
-                        onPress={() => selectCalendarDate(date)}
+                        isCopySource={copySourceKey === key}
+                        isCopyTarget={copyTargetKeys.includes(key)}
+                        setCellRef={(node) => setDateCardRef(key, node)}
+                        onLayout={() => measureDateCard(key)}
+                        onPress={() => handleDatePress(date, true)}
+                        onLongPress={() => startCopyMealPlan(date)}
+                        onPressOut={(event) => handleCopyPressOut(key, event)}
                       />
                     );
                   })}
@@ -1277,6 +1574,7 @@ export default function MealScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
     </Screen>
   );
 }
@@ -1437,4 +1735,21 @@ const styles = StyleSheet.create({
   calendarLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   calendarLegendStatusDot: { width: 10, height: 10, borderRadius: 5 },
   calendarLegendText: { color: '#64748B', fontSize: 12, fontWeight: '700' },
+  dateCardCopySource: { borderWidth: 2, borderColor: '#0F172A', transform: [{ scale: 1.03 }] },
+  dateCardCopyTarget: { borderWidth: 2, borderColor: colors.primaryDark, backgroundColor: '#22C55E' },
+  copyModeBanner: { marginTop: 12, borderRadius: 18, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  copyModeText: { flex: 1, color: colors.primaryDark, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  copyConfirmButton: { minHeight: 28, borderRadius: 14, backgroundColor: colors.primaryDark, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  copyConfirmButtonDisabled: { opacity: 0.45 },
+  copyConfirmText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
+  copyCancelButton: { minHeight: 28, borderRadius: 14, backgroundColor: '#FFFFFF', paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  copyCancelText: { color: '#EF4444', fontSize: 12, fontWeight: '900' },
+  calendarDateWrapCopySource: { borderRadius: 21, backgroundColor: '#F0FDF4', borderWidth: 2, borderColor: colors.primaryDark },
+  calendarDateWrapCopyTarget: { borderRadius: 21, backgroundColor: '#DCFCE7', borderWidth: 2, borderColor: '#22C55E' },
+  calendarCopyBanner: { marginHorizontal: 18, marginBottom: 8, borderRadius: 16, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  calendarCopyText: { flex: 1, color: colors.primaryDark, fontSize: 11, fontWeight: '800', lineHeight: 16 },
+  calendarCopyConfirmButton: { minHeight: 26, borderRadius: 13, backgroundColor: colors.primaryDark, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center' },
+  calendarCopyConfirmText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
+  calendarCopyCancelText: { color: '#EF4444', fontSize: 11, fontWeight: '900' },
+
 });
