@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -25,12 +25,15 @@ import {
 } from '../components/Common';
 
 const SHOPPING_LIST_STORAGE_KEY = 'JOMHEALTHY_SHOPPING_LIST_BY_OWNER_V1';
+const ALL_OWNER_KEY = 'all';
+const GUEST_OWNER_KEY = 'guest';
 
 type ShoppingCategory = 'vegetables' | 'protein' | 'carbs' | 'others';
 
 type ShoppingItem = {
   id: string;
   name: string;
+  nameEn?: string;
   nameCn?: string;
   nameMs?: string;
   quantity: string;
@@ -38,10 +41,25 @@ type ShoppingItem = {
   quantityMs?: string;
   category: ShoppingCategory;
   source: string;
+  sourceEn?: string;
   sourceCn?: string;
   sourceMs?: string;
   mealId: string;
   checked: boolean;
+};
+
+type DisplayShoppingItem = ShoppingItem & {
+  displayId: string;
+  ownerKey: string;
+  ownerLabel: string;
+};
+
+type OwnerOption = {
+  key: string;
+  label: string;
+  subtitle?: string;
+  avatar?: string;
+  icon?: keyof typeof Ionicons.glyphMap;
 };
 
 type SupermarketItem = {
@@ -117,7 +135,6 @@ function buildGoogleMapsUrl(query: string) {
   )}`;
 }
 
-
 const INGREDIENT_TRANSLATIONS: Record<string, { zh: string; ms: string }> = {
   rice: { zh: '米饭', ms: 'Nasi' },
   nasi: { zh: '米饭', ms: 'Nasi' },
@@ -129,6 +146,7 @@ const INGREDIENT_TRANSLATIONS: Record<string, { zh: string; ms: string }> = {
   spaghetti: { zh: '意大利面', ms: 'Spageti' },
   oat: { zh: '燕麦', ms: 'Oat' },
   oats: { zh: '燕麦', ms: 'Oat' },
+  rolled_oats: { zh: '燕麦片', ms: 'Oat' },
   flour: { zh: '面粉', ms: 'Tepung' },
   potato: { zh: '土豆', ms: 'Kentang' },
   sweet_potato: { zh: '红薯', ms: 'Ubi keledek' },
@@ -158,6 +176,7 @@ const INGREDIENT_TRANSLATIONS: Record<string, { zh: string; ms: string }> = {
   cabbage: { zh: '卷心菜', ms: 'Kubis' },
   lettuce: { zh: '生菜', ms: 'Salad' },
   mushroom: { zh: '蘑菇', ms: 'Cendawan' },
+  mixed_vegetables: { zh: '混合蔬菜', ms: 'Sayur campuran' },
   corn: { zh: '玉米', ms: 'Jagung' },
   pea: { zh: '豌豆', ms: 'Kacang pea' },
   peas: { zh: '豌豆', ms: 'Kacang pea' },
@@ -204,16 +223,63 @@ function translateIngredientName(name: string, language: string) {
   return language === 'zh' ? entry[1].zh : entry[1].ms;
 }
 
+function normalizeOwnerKey(value?: string | null) {
+  const text = String(value || '').trim();
+  return text.length > 0 ? text : GUEST_OWNER_KEY;
+}
+
+function getOwnerKeyForChild(child: any) {
+  return `child_${child.id}`;
+}
+
+function normalizeShoppingCategory(value: any): ShoppingCategory {
+  const text = String(value || '').toLowerCase();
+
+  if (text === 'vegetables' || text === 'protein' || text === 'carbs' || text === 'others') {
+    return text;
+  }
+
+  if (text.includes('veg') || text.includes('fruit')) return 'vegetables';
+  if (text.includes('protein') || text.includes('meat') || text.includes('fish') || text.includes('egg')) return 'protein';
+  if (text.includes('carb') || text.includes('grain') || text.includes('rice')) return 'carbs';
+
+  return 'others';
+}
+
+function normalizeShoppingList(value: any): ShoppingItem[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => ({
+      id: String(item.id || `${item.name || 'item'}-${index}`).replace(/\s+/g, '-'),
+      name: String(item.name || item.nameEn || item.foodNameEn || item.ingredientName || 'Ingredient'),
+      nameEn: item.nameEn || item.name || item.foodNameEn || item.ingredientName || '',
+      nameCn: item.nameCn || item.foodNameCn || '',
+      nameMs: item.nameMs || item.foodNameMs || '',
+      quantity: String(item.quantity || item.measure || ''),
+      quantityCn: item.quantityCn || '',
+      quantityMs: item.quantityMs || '',
+      category: normalizeShoppingCategory(item.category),
+      source: String(item.source || item.sourceEn || ''),
+      sourceEn: item.sourceEn || item.source || '',
+      sourceCn: item.sourceCn || '',
+      sourceMs: item.sourceMs || '',
+      mealId: String(item.mealId || ''),
+      checked: Boolean(item.checked),
+    }));
+}
+
 function getShoppingItemName(item: ShoppingItem, language: string) {
   if (language === 'zh') {
-    return item.nameCn || translateIngredientName(item.name, language);
+    return item.nameCn || translateIngredientName(item.nameEn || item.name, language);
   }
 
   if (language === 'ms') {
-    return item.nameMs || translateIngredientName(item.name, language);
+    return item.nameMs || translateIngredientName(item.nameEn || item.name, language);
   }
 
-  return item.name;
+  return item.nameEn || item.name;
 }
 
 function getShoppingItemQuantity(item: ShoppingItem, language: string) {
@@ -225,18 +291,28 @@ function getShoppingItemQuantity(item: ShoppingItem, language: string) {
 function getShoppingItemSource(item: ShoppingItem, language: string) {
   if (language === 'zh') return item.sourceCn || item.source;
   if (language === 'ms') return item.sourceMs || item.source;
-  return item.source;
+  return item.sourceEn || item.source;
 }
 
 export default function ShoppingScreen() {
   const navigation = useNavigation<any>();
   const { language } = useLanguage();
-  const { activeChild, getOwnerKey } = useChildProfile();
+  const childProfile = useChildProfile() as any;
+  const {
+    activeChild,
+    getOwnerKey,
+    children = [],
+  } = childProfile;
 
-  const ownerKey = getOwnerKey();
+  const firstChildOwnerKey = children?.[0]?.id ? getOwnerKeyForChild(children[0]) : ALL_OWNER_KEY;
+  const activeOwnerKey = activeChild?.id
+    ? getOwnerKeyForChild(activeChild)
+    : firstChildOwnerKey;
 
   const [showSupermarkets, setShowSupermarkets] = useState(false);
-  const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const [shoppingByOwner, setShoppingByOwner] = useState<Record<string, ShoppingItem[]>>({});
+  const [selectedOwnerKey, setSelectedOwnerKey] = useState<string>(activeOwnerKey);
 
   const getText = (en: string, zh: string, ms: string) => {
     if (language === 'zh') return zh;
@@ -244,18 +320,61 @@ export default function ShoppingScreen() {
     return en;
   };
 
+  const getOwnerLabel = useCallback(
+    (ownerKey: string) => {
+      if (ownerKey === ALL_OWNER_KEY) return getText('All children', '所有小孩', 'Semua Anak');
+
+      const matchedChild = children.find((child: any) => getOwnerKeyForChild(child) === ownerKey);
+      return matchedChild?.nickname || ownerKey.replace(/^child_/, getText('Child ', '小孩 ', 'Anak '));
+    },
+    [children, language]
+  );
+
+  const ownerOptions = useMemo<OwnerOption[]>(() => {
+    const options: OwnerOption[] = [
+      {
+        key: ALL_OWNER_KEY,
+        label: getText('All children', '所有小孩', 'Semua Anak'),
+        subtitle: getText('View every child list', '查看所有小孩清单', 'Lihat semua senarai anak'),
+        icon: 'people',
+      },
+    ];
+
+    children.forEach((child: any) => {
+      options.push({
+        key: getOwnerKeyForChild(child),
+        label: child.nickname || getText('Child', '小孩', 'Anak'),
+        avatar: child.avatar || '👶',
+        subtitle: getText('Child list', '小孩清单', 'Senarai anak'),
+      });
+    });
+
+    return options;
+  }, [children, language]);
+
+  const childOwnerKeys = useMemo(
+    () => children.map((child: any) => getOwnerKeyForChild(child)),
+    [children]
+  );
+
   const loadShoppingList = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(SHOPPING_LIST_STORAGE_KEY);
-      const byOwner = raw ? JSON.parse(raw) : {};
-      const list = byOwner[ownerKey] || [];
+      const parsed = raw ? JSON.parse(raw) : {};
+      const nextByOwner: Record<string, ShoppingItem[]> = {};
 
-      setShoppingList(Array.isArray(list) ? list : []);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        Object.entries(parsed).forEach(([owner, list]) => {
+          nextByOwner[normalizeOwnerKey(owner)] = normalizeShoppingList(list);
+        });
+      }
+
+      setShoppingByOwner(nextByOwner);
     } catch (error) {
       console.log('Load shopping list failed:', error);
-      setShoppingList([]);
+      setShoppingByOwner({});
     }
-  }, [ownerKey]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -263,44 +382,92 @@ export default function ShoppingScreen() {
     }, [loadShoppingList])
   );
 
-  const saveShoppingList = async (nextList: ShoppingItem[]) => {
-    setShoppingList(nextList);
+  useEffect(() => {
+    if (selectedOwnerKey === ALL_OWNER_KEY) return;
+
+    const optionExists = ownerOptions.some((option) => option.key === selectedOwnerKey);
+    if (!optionExists) {
+      setSelectedOwnerKey(activeOwnerKey || ALL_OWNER_KEY);
+    }
+  }, [activeOwnerKey, ownerOptions, selectedOwnerKey]);
+
+  const saveShoppingByOwner = async (nextByOwner: Record<string, ShoppingItem[]>) => {
+    setShoppingByOwner(nextByOwner);
 
     try {
-      const raw = await AsyncStorage.getItem(SHOPPING_LIST_STORAGE_KEY);
-      const byOwner = raw ? JSON.parse(raw) : {};
-
-      byOwner[ownerKey] = nextList;
-
       await AsyncStorage.setItem(
         SHOPPING_LIST_STORAGE_KEY,
-        JSON.stringify(byOwner)
+        JSON.stringify(nextByOwner)
       );
     } catch (error) {
       console.log('Save shopping list failed:', error);
     }
   };
 
-  const toggleShoppingItem = async (itemId: string) => {
-    const nextList = shoppingList.map((item) =>
-      item.id === itemId ? { ...item, checked: !item.checked } : item
-    );
+  const selectedShoppingList = useMemo<DisplayShoppingItem[]>(() => {
+    if (selectedOwnerKey === ALL_OWNER_KEY) {
+      return childOwnerKeys.flatMap((owner) =>
+        normalizeShoppingList(shoppingByOwner[owner]).map((item) => ({
+          ...item,
+          ownerKey: owner,
+          ownerLabel: getOwnerLabel(owner),
+          displayId: `${owner}__${item.id}`,
+        }))
+      );
+    }
 
-    await saveShoppingList(nextList);
+    return normalizeShoppingList(shoppingByOwner[selectedOwnerKey]).map((item) => ({
+      ...item,
+      ownerKey: selectedOwnerKey,
+      ownerLabel: getOwnerLabel(selectedOwnerKey),
+      displayId: `${selectedOwnerKey}__${item.id}`,
+    }));
+  }, [selectedOwnerKey, shoppingByOwner, childOwnerKeys, getOwnerLabel]);
+
+  const toggleShoppingItem = async (ownerKey: string, itemId: string) => {
+    const normalizedOwnerKey = normalizeOwnerKey(ownerKey);
+    const nextByOwner = {
+      ...shoppingByOwner,
+      [normalizedOwnerKey]: normalizeShoppingList(shoppingByOwner[normalizedOwnerKey]).map((item) =>
+        item.id === itemId ? { ...item, checked: !item.checked } : item
+      ),
+    };
+
+    await saveShoppingByOwner(nextByOwner);
   };
 
   const clearCheckedItems = async () => {
-    const nextList = shoppingList.filter((item) => !item.checked);
-    await saveShoppingList(nextList);
+    const nextByOwner = { ...shoppingByOwner };
+
+    if (selectedOwnerKey === ALL_OWNER_KEY) {
+      childOwnerKeys.forEach((owner) => {
+        nextByOwner[owner] = normalizeShoppingList(nextByOwner[owner]).filter((item) => !item.checked);
+      });
+    } else {
+      nextByOwner[selectedOwnerKey] = normalizeShoppingList(nextByOwner[selectedOwnerKey]).filter((item) => !item.checked);
+    }
+
+    await saveShoppingByOwner(nextByOwner);
   };
 
   const resetAllItems = async () => {
-    const nextList = shoppingList.map((item) => ({
-      ...item,
-      checked: false,
-    }));
+    const nextByOwner = { ...shoppingByOwner };
 
-    await saveShoppingList(nextList);
+    if (selectedOwnerKey === ALL_OWNER_KEY) {
+      childOwnerKeys.forEach((owner) => {
+        nextByOwner[owner] = normalizeShoppingList(nextByOwner[owner]).map((item) => ({
+          ...item,
+          checked: false,
+        }));
+      });
+    } else {
+      nextByOwner[selectedOwnerKey] = normalizeShoppingList(nextByOwner[selectedOwnerKey]).map((item) => ({
+        ...item,
+        checked: false,
+      }));
+    }
+
+    await saveShoppingByOwner(nextByOwner);
   };
 
   const openGoogleMaps = async (query: string) => {
@@ -346,16 +513,18 @@ export default function ShoppingScreen() {
   };
 
   const grouped = useMemo(() => {
-    return shoppingList.reduce((acc, item) => {
+    return selectedShoppingList.reduce((acc, item) => {
       acc[item.category] = acc[item.category] || [];
       acc[item.category].push(item);
       return acc;
-    }, {} as Record<ShoppingCategory, ShoppingItem[]>);
-  }, [shoppingList]);
+    }, {} as Record<ShoppingCategory, DisplayShoppingItem[]>);
+  }, [selectedShoppingList]);
 
-  const checkedCount = shoppingList.filter((item) => item.checked).length;
-  const totalCount = shoppingList.length;
+  const checkedCount = selectedShoppingList.filter((item) => item.checked).length;
+  const totalCount = selectedShoppingList.length;
   const percent = totalCount ? Math.round((checkedCount / totalCount) * 100) : 0;
+  const selectedOwnerLabel = getOwnerLabel(selectedOwnerKey);
+  const isAllSelected = selectedOwnerKey === ALL_OWNER_KEY;
 
   const categoryNames: Record<ShoppingCategory, string> = {
     vegetables: getText('Vegetables', '蔬菜', 'Sayur-sayuran'),
@@ -377,19 +546,35 @@ export default function ShoppingScreen() {
         <Header
           title={getText('Shopping', '购物清单', 'Senarai Beli-belah')}
           subtitle={
-            activeChild
+            isAllSelected
               ? getText(
-                  `${activeChild.nickname}'s ingredients`,
-                  `${activeChild.nickname}的食材`,
-                  `Bahan untuk ${activeChild.nickname}`
+                  'All children ingredients',
+                  '所有小孩的食材',
+                  'Bahan untuk semua anak'
                 )
               : getText(
-                  'Guest ingredients from meal plan',
-                  '访客膳食计划食材',
-                  'Bahan tetamu daripada pelan makanan'
+                  `${selectedOwnerLabel}'s ingredients`,
+                  `${selectedOwnerLabel}的食材`,
+                  `Bahan untuk ${selectedOwnerLabel}`
                 )
           }
           icon="cart"
+          right={
+            <Pressable
+              style={styles.headerOwnerButton}
+              onPress={() => setShowOwnerDropdown(true)}
+            >
+              <Ionicons
+                name={isAllSelected ? 'people' : 'person'}
+                size={16}
+                color="#FFFFFF"
+              />
+              <Text style={styles.headerOwnerText} numberOfLines={1}>
+                {selectedOwnerLabel}
+              </Text>
+              <Ionicons name="chevron-down" size={14} color="#FFFFFF" />
+            </Pressable>
+          }
         />
 
         <ScrollView
@@ -433,7 +618,11 @@ export default function ShoppingScreen() {
           {totalCount === 0 ? (
             <EmptyState
               emoji="🛒"
-              title={getText('No shopping items yet', '还没有购物食材', 'Belum ada item belian')}
+              title={
+                isAllSelected
+                  ? getText('No shopping items for any child yet', '所有小孩都还没有购物食材', 'Belum ada item belian untuk semua anak')
+                  : getText('No shopping items yet', '还没有购物食材', 'Belum ada item belian')
+              }
               subtitle={getText('Add recipes to your Meal Plan first. Ingredients will automatically appear here.', '先把食谱加入膳食计划，食材会自动出现在这里。', 'Tambah resipi ke Pelan Makanan dahulu. Bahan akan muncul secara automatik di sini.')}
               action={
                 <PrimaryButton
@@ -447,19 +636,19 @@ export default function ShoppingScreen() {
             <>
               <Card>
                 <View style={styles.progressHeader}>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.cardTitle}>{getText('Shopping List', '购物清单', 'Senarai Beli-belah')}</Text>
                     <Text style={styles.cardSub}>
-                      {activeChild
+                      {isAllSelected
                         ? getText(
-                            `Generated from ${activeChild.nickname}'s Meal Plan`,
-                            `来自${activeChild.nickname}的膳食计划`,
-                            `Dijana daripada Pelan Makanan ${activeChild.nickname}`
+                            'Generated from all Meal Plans',
+                            '来自所有小孩的膳食计划',
+                            'Dijana daripada semua Pelan Makanan'
                           )
                         : getText(
-                            'Generated from Guest Meal Plan',
-                            '来自访客膳食计划',
-                            'Dijana daripada Pelan Makanan Tetamu'
+                            `Generated from ${selectedOwnerLabel}'s Meal Plan`,
+                            `来自${selectedOwnerLabel}的膳食计划`,
+                            `Dijana daripada Pelan Makanan ${selectedOwnerLabel}`
                           )}
                     </Text>
                   </View>
@@ -505,8 +694,8 @@ export default function ShoppingScreen() {
 
                     {grouped[category].map((item) => (
                       <Pressable
-                        key={item.id}
-                        onPress={() => toggleShoppingItem(item.id)}
+                        key={item.displayId}
+                        onPress={() => toggleShoppingItem(item.ownerKey, item.id)}
                         style={[
                           styles.itemRow,
                           item.checked && styles.itemDone,
@@ -521,14 +710,25 @@ export default function ShoppingScreen() {
                         </View>
 
                         <View style={styles.itemInfo}>
-                          <Text
-                            style={[
-                              styles.itemName,
-                              item.checked && styles.itemNameDone,
-                            ]}
-                          >
-                            {getShoppingItemName(item, language)}
-                          </Text>
+                          <View style={styles.itemTitleRow}>
+                            <Text
+                              style={[
+                                styles.itemName,
+                                item.checked && styles.itemNameDone,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {getShoppingItemName(item, language)}
+                            </Text>
+
+                            {isAllSelected && (
+                              <View style={styles.ownerBadge}>
+                                <Text style={styles.ownerBadgeText} numberOfLines={1}>
+                                  {item.ownerLabel}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
 
                           {!!item.quantity && (
                             <Text style={styles.itemQuantity}>
@@ -563,6 +763,80 @@ export default function ShoppingScreen() {
           )}
         </ScrollView>
       </Screen>
+
+      <Modal
+        visible={showOwnerDropdown}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOwnerDropdown(false)}
+      >
+        <Pressable
+          style={styles.ownerDropdownBackdrop}
+          onPress={() => setShowOwnerDropdown(false)}
+        >
+          <View style={styles.ownerDropdownPanel}>
+            <Text style={styles.ownerDropdownTitle}>
+              {getText('Shopping list', '购物清单', 'Senarai Beli-belah')}
+            </Text>
+
+            {ownerOptions.map((option) => {
+              const selected = selectedOwnerKey === option.key;
+              const listCount = option.key === ALL_OWNER_KEY
+                ? childOwnerKeys.reduce(
+                    (sum, owner) => sum + normalizeShoppingList(shoppingByOwner[owner]).length,
+                    0
+                  )
+                : normalizeShoppingList(shoppingByOwner[option.key]).length;
+
+              return (
+                <Pressable
+                  key={option.key}
+                  style={[styles.ownerDropdownItem, selected && styles.ownerDropdownItemActive]}
+                  onPress={() => {
+                    setSelectedOwnerKey(option.key);
+                    setShowOwnerDropdown(false);
+                  }}
+                >
+                  <View style={[styles.ownerDropdownIcon, selected && styles.ownerDropdownIconActive]}>
+                    {option.avatar ? (
+                      <Text style={styles.ownerDropdownAvatar}>{option.avatar}</Text>
+                    ) : (
+                      <Ionicons
+                        name={option.icon || 'person'}
+                        size={17}
+                        color={selected ? '#FFFFFF' : colors.primaryDark}
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.ownerDropdownTextWrap}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.ownerDropdownLabel, selected && styles.ownerDropdownLabelActive]}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.ownerDropdownCount, selected && styles.ownerDropdownCountActive]}
+                    >
+                      {getText(
+                        `${listCount} item${listCount === 1 ? '' : 's'}`,
+                        `${listCount} 项`,
+                        `${listCount} item`
+                      )}
+                    </Text>
+                  </View>
+
+                  {selected && (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primaryDark} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={showSupermarkets}
@@ -634,7 +908,6 @@ export default function ShoppingScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-
     </>
   );
 }
@@ -658,6 +931,208 @@ const styles = StyleSheet.create({
   langText: {
     color: '#FFFFFF',
     fontWeight: '800',
+  },
+
+  headerOwnerButton: {
+    maxWidth: 150,
+    minWidth: 96,
+    height: 42,
+    borderRadius: 21,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+
+  headerOwnerText: {
+    flexShrink: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  ownerDropdownBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.20)',
+    alignItems: 'flex-end',
+    paddingTop: 86,
+    paddingRight: 16,
+  },
+
+  ownerDropdownPanel: {
+    width: 250,
+    maxHeight: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+
+  ownerDropdownTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+
+  ownerDropdownItem: {
+    minHeight: 54,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  ownerDropdownItemActive: {
+    backgroundColor: colors.primaryLight,
+  },
+
+  ownerDropdownIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  ownerDropdownIconActive: {
+    backgroundColor: colors.primaryDark,
+  },
+
+  ownerDropdownAvatar: {
+    fontSize: 18,
+  },
+
+  ownerDropdownTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  ownerDropdownLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  ownerDropdownLabelActive: {
+    color: colors.primaryDark,
+  },
+
+  ownerDropdownCount: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  ownerDropdownCountActive: {
+    color: colors.primaryDark,
+  },
+
+  ownerSelectorCard: {
+    paddingBottom: 14,
+  },
+
+  ownerSelectorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  ownerSelectorTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  ownerSelectorSubtitle: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+
+  ownerChipScroll: {
+    marginTop: 14,
+  },
+
+  ownerChipContent: {
+    gap: 10,
+    paddingRight: 4,
+  },
+
+  ownerChip: {
+    minWidth: 138,
+    maxWidth: 176,
+    minHeight: 54,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+
+  ownerChipActive: {
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
+  },
+
+  ownerChipIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  ownerChipIconActive: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+
+  ownerChipAvatar: {
+    fontSize: 18,
+  },
+
+  ownerChipTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  ownerChipLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  ownerChipLabelActive: {
+    color: '#FFFFFF',
+  },
+
+  ownerChipCount: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  ownerChipCountActive: {
+    color: 'rgba(255,255,255,0.8)',
   },
 
   supermarketHeader: {
@@ -740,6 +1215,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 14,
+    gap: 10,
   },
 
   cardTitle: {
@@ -852,9 +1328,17 @@ const styles = StyleSheet.create({
 
   itemInfo: {
     flex: 1,
+    minWidth: 0,
+  },
+
+  itemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 
   itemName: {
+    flex: 1,
     color: colors.text,
     fontWeight: '900',
     fontSize: 15,
@@ -863,6 +1347,20 @@ const styles = StyleSheet.create({
   itemNameDone: {
     textDecorationLine: 'line-through',
     color: colors.muted,
+  },
+
+  ownerBadge: {
+    maxWidth: 84,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: colors.primaryLight,
+  },
+
+  ownerBadgeText: {
+    color: colors.primaryDark,
+    fontSize: 10,
+    fontWeight: '900',
   },
 
   itemQuantity: {
