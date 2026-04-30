@@ -129,6 +129,7 @@ export async function generateMealPlanByAi(params: {
   targetFat?: number;
   days?: number;
   mealPreference?: string;
+  language?: 'en' | 'zh' | 'ms';
 }) {
   const url = `${API_BASE_URL}/meal/generatePlan`;
 

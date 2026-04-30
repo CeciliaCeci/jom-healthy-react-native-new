@@ -136,6 +136,7 @@ export default function FoodInfoScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { language } = useLanguage();
+  const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
 
   const foodName =
     route.params?.foodName ||
@@ -151,7 +152,7 @@ export default function FoodInfoScreen() {
     const query = String(foodName || '').trim();
 
     if (!query) {
-      setError('Please enter a food name.');
+      setError(getText('Please enter a food name.', '请输入食物名称。', 'Sila masukkan nama makanan.'));
       return;
     }
 
@@ -178,7 +179,7 @@ export default function FoodInfoScreen() {
 
       if (!data.length) {
         setFood(null);
-        setError('No nutrition data found for this food.');
+        setError(getText('No nutrition data found for this food.', '没有找到该食物的营养数据。', 'Tiada data nutrisi ditemui untuk makanan ini.'));
         return;
       }
 
@@ -186,7 +187,7 @@ export default function FoodInfoScreen() {
     } catch (e) {
       console.log('Food nutrition fetch failed:', e);
       setFood(null);
-      setError('Network error. Please check your connection and try again.');
+      setError(getText('Network error. Please check your connection and try again.', '网络错误。请检查网络连接后重试。', 'Ralat rangkaian. Sila semak sambungan anda dan cuba lagi.'));
     } finally {
       setLoading(false);
     }
@@ -288,8 +289,8 @@ export default function FoodInfoScreen() {
   return (
     <Screen padded={false}>
       <Header
-        title="Food Analysis"
-        subtitle="Nutrition result"
+        title={getText('Food Analysis', '食物分析', 'Analisis Makanan')}
+        subtitle={getText('Nutrition result', '营养结果', 'Keputusan nutrisi')}
         icon="restaurant"
         onBack={() => navigation.goBack()}
       />
@@ -301,16 +302,16 @@ export default function FoodInfoScreen() {
         {loading ? (
           <View style={styles.loadingCard}>
             <ActivityIndicator size="large" color={colors.primaryDark} />
-            <Text style={styles.loadingText}>Loading nutrition data...</Text>
+            <Text style={styles.loadingText}>{getText('Loading nutrition data...', '正在加载营养数据...', 'Memuatkan data nutrisi...')}</Text>
           </View>
         ) : error ? (
           <View style={styles.errorCard}>
             <Ionicons name="wifi-outline" size={36} color="#EF4444" />
-            <Text style={styles.errorTitle}>Unable to load food data</Text>
+            <Text style={styles.errorTitle}>{getText('Unable to load food data', '无法加载食物数据', 'Tidak dapat memuatkan data makanan')}</Text>
             <Text style={styles.errorText}>{error}</Text>
 
             <Pressable style={styles.retryButton} onPress={loadFood}>
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{getText('Retry', '重试', 'Cuba lagi')}</Text>
             </Pressable>
           </View>
         ) : (
@@ -359,7 +360,7 @@ export default function FoodInfoScreen() {
             </View>
 
             <View>
-              <Text style={styles.sectionTitle}>Nutrition Facts</Text>
+              <Text style={styles.sectionTitle}>{getText('Nutrition Facts', '营养成分', 'Fakta Nutrisi')}</Text>
 
               <View style={styles.nutritionGrid}>
                 {nutritionInfo.map((item) => (
@@ -381,7 +382,7 @@ export default function FoodInfoScreen() {
 
               <View style={styles.additionalCard}>
                 <View style={styles.additionalItem}>
-                  <Text style={styles.additionalLabel}>Protein</Text>
+                  <Text style={styles.additionalLabel}>{getText('Protein', '蛋白质', 'Protein')}</Text>
                   <Text style={styles.additionalValue}>
                     {nutrition.protein || 0}g
                   </Text>
@@ -390,7 +391,7 @@ export default function FoodInfoScreen() {
                 <View style={styles.additionalDivider} />
 
                 <View style={styles.additionalItem}>
-                  <Text style={styles.additionalLabel}>Carbs</Text>
+                  <Text style={styles.additionalLabel}>{getText('Carbs', '碳水', 'Karbohidrat')}</Text>
                   <Text style={styles.additionalValue}>
                     {nutrition.carbs || 0}g
                   </Text>
@@ -401,7 +402,7 @@ export default function FoodInfoScreen() {
             <View style={styles.tipsCard}>
               <View style={styles.tipsTitleRow}>
                 <Text style={styles.tipsEmoji}>💡</Text>
-                <Text style={styles.tipsTitle}>Tips for Parents</Text>
+                <Text style={styles.tipsTitle}>{getText('Tips for Parents', '给家长的建议', 'Petua untuk Ibu Bapa')}</Text>
               </View>
 
               {tips.map((tip, index) => (
@@ -419,13 +420,16 @@ export default function FoodInfoScreen() {
               style={styles.checkAnotherButton}
               onPress={() => navigation.goBack()}
             >
-              <Text style={styles.checkAnotherText}>Check Another Food</Text>
+              <Text style={styles.checkAnotherText}>{getText('Check Another Food', '检查其他食物', 'Semak Makanan Lain')}</Text>
             </Pressable>
 
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
-                ℹ️ Nutrition values are approximate. Actual values may vary by
-                preparation and serving size.
+                {getText(
+                  'ℹ️ Nutrition values are approximate. Actual values may vary by preparation and serving size.',
+                  'ℹ️ 营养数值仅供参考。实际数值可能因做法和份量而不同。',
+                  'ℹ️ Nilai nutrisi adalah anggaran. Nilai sebenar mungkin berbeza mengikut penyediaan dan saiz hidangan.'
+                )}
               </Text>
             </View>
           </>

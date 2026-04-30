@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useLanguage } from '../context/LanguageContext';
 import { RootStackParamList, MainTabParamList } from './types';
 import HomeScreen from '../screens/HomeScreen';
 import MealScreen from '../screens/MealScreen';
@@ -22,6 +23,8 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const navigationRef = createNavigationContainerRef<any>();
 
 function MainTabs() {
+  const { t } = useLanguage();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -42,6 +45,14 @@ function MainTabs() {
           shadowRadius: 12,
         },
         tabBarLabelStyle: { fontWeight: '700', fontSize: 12 },
+        tabBarLabel:
+          route.name === 'Home'
+            ? t('home')
+            : route.name === 'Meal'
+              ? t('meal')
+              : route.name === 'Shopping'
+                ? t('shopping')
+                : t('profile'),
         tabBarIcon: ({ color, size }) => {
           const icons: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
             Home: 'home',

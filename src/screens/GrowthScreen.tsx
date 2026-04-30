@@ -46,7 +46,7 @@ function SimpleLineChart({ data, unit, showWhoLines }: { data: Point[]; unit: st
   if (data.length === 0) {
     return (
       <View style={[styles.chartWrap, { height: containerHeight, justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={{ color: colors.muted }}>Not enough data to plot chart</Text>
+        <Text style={{ color: colors.muted }}>{t('chartNoData')}</Text>
       </View>
     );
   }
@@ -171,6 +171,7 @@ type SegmentType = "HEIGHT" | "WEIGHT" | "BMI";
 export default function GrowthScreen() {
   const navigation = useNavigation<any>();
   const { t, language } = useLanguage();
+  const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
 
   const [records, setRecords] = useState<HealthRecord[]>([]);
   const [whoData, setWhoData] = useState<any>(null);
@@ -212,12 +213,12 @@ export default function GrowthScreen() {
 
   const handleExport = async () => {
     try {
-      if (records.length === 0) return Alert.alert("No Data", "No records to export.");
+      if (records.length === 0) return Alert.alert(getText('No Data', '没有数据', 'Tiada Data'), getText('No records to export.', '没有可导出的记录。', 'Tiada rekod untuk dieksport.'));
       const fileUri = documentDirectory + "bmi_health_backup.json";
       await writeAsStringAsync(fileUri, JSON.stringify(records));
       await Sharing.shareAsync(fileUri);
     } catch (e) { 
-      Alert.alert("Export Failed", "Error creating backup."); 
+      Alert.alert(getText('Export Failed', '导出失败', 'Eksport Gagal'), getText('Error creating backup.', '创建备份时出错。', 'Ralat semasa mencipta sandaran.')); 
     }
   };
 
@@ -228,10 +229,10 @@ export default function GrowthScreen() {
         const content = await readAsStringAsync(result.assets[0].uri);
         const importedData = JSON.parse(content);
         if (Array.isArray(importedData)) {
-          Alert.alert("Import", `Restore ${importedData.length} records?`, [
-            { text: "Cancel", style: "cancel" },
+          Alert.alert(getText('Import', '导入', 'Import'), getText('Restore {{count}} records?', '恢复 {{count}} 条记录？', 'Pulihkan {{count}} rekod?').replace('{{count}}', String(importedData.length)), [
+            { text: getText('Cancel', '取消', 'Batal'), style: "cancel" },
             { 
-              text: "Import", 
+              text: getText('Import', '导入', 'Import'), 
               onPress: async () => {
                 for (const item of importedData) {
                   await saveHealthRecord(item);
@@ -243,17 +244,17 @@ export default function GrowthScreen() {
         }
       }
     } catch (e) { 
-      Alert.alert("Import Failed", "Invalid file."); 
+      Alert.alert(getText('Import Failed', '导入失败', 'Import Gagal'), getText('Invalid file.', '文件无效。', 'Fail tidak sah.')); 
     }
   };
 
   const handleSingleDelete = (id: string) => {
     Alert.alert(
-      "Delete Record", "Are you sure you want to delete this record?",
+      getText('Delete Record', '删除记录', 'Padam Rekod'), getText('Are you sure you want to delete this record?', '您确定要删除这条记录吗？', 'Adakah anda pasti mahu memadam rekod ini?'),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: getText('Cancel', '取消', 'Batal'), style: "cancel" },
         { 
-          text: "Delete", style: "destructive", 
+          text: getText('Delete', '删除', 'Padam'), style: "destructive", 
           onPress: async () => {
             await deleteHealthRecords([id]);
             fetchData(); 
@@ -266,11 +267,11 @@ export default function GrowthScreen() {
   const handleBatchDelete = () => {
     if (selectedIds.length === 0) return setIsEditMode(false);
     Alert.alert(
-      "Delete Records", `Delete ${selectedIds.length} selected record(s)?`,
+      getText('Delete Records', '删除记录', 'Padam Rekod'), getText('Delete {{count}} selected record(s)?', '删除 {{count}} 条已选择记录？', 'Padam {{count}} rekod yang dipilih?').replace('{{count}}', String(selectedIds.length)),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: getText('Cancel', '取消', 'Batal'), style: "cancel" },
         {
-          text: "Delete", style: "destructive",
+          text: getText('Delete', '删除', 'Padam'), style: "destructive",
           onPress: async () => {
             await deleteHealthRecords(selectedIds);
             setSelectedIds([]); 
@@ -319,11 +320,11 @@ export default function GrowthScreen() {
         <View style={styles.importExportRow}>
           <TouchableOpacity onPress={handleImport} style={styles.actionPill}>
             <Upload size={14} color="#64748B" />
-            <Text style={styles.actionPillText}>Import</Text>
+            <Text style={styles.actionPillText}>{getText('Import', '导入', 'Import')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleExport} style={styles.actionPill}>
             <Download size={14} color="#64748B" />
-            <Text style={styles.actionPillText}>Export</Text>
+            <Text style={styles.actionPillText}>{getText('Export', '导出', 'Eksport')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -334,7 +335,7 @@ export default function GrowthScreen() {
             <Chip label={t('yourchildbmi')} selected={selectedTab === 'BMI'} onPress={() => setSelectedTab('BMI')} />
           </View>
           <Text style={styles.chartTitle}>
-            {selectedTab === 'HEIGHT' ? t('heightTrend') : selectedTab === 'WEIGHT' ? t('weightTrend') : 'BMI Trend'}
+            {selectedTab === 'HEIGHT' ? t('heightTrend') : selectedTab === 'WEIGHT' ? t('weightTrend') : getText('BMI Trend', 'BMI趋势', 'Trend BMI')}
           </Text>
           
           {loading ? (
@@ -349,7 +350,7 @@ export default function GrowthScreen() {
         </Card>
 
         <View style={styles.listHeader}>
-          <SectionTitle title={t('pastRecords') || "History Records"} />
+          <SectionTitle title={t('pastRecords') || getText('History Records', '历史记录', 'Rekod Lepas')} />
           
           {displayRecords.length > 0 && (
             <Pressable 
@@ -363,7 +364,7 @@ export default function GrowthScreen() {
               }}
               style={styles.manageBtn}
             >
-              <Text style={styles.manageBtnText}>{isEditMode ? "Cancel" : t("manage")}</Text>
+              <Text style={styles.manageBtnText}>{isEditMode ? getText('Cancel', '取消', 'Batal') : t('manage')}</Text>
             </Pressable>
           )}
         </View>
@@ -379,7 +380,7 @@ export default function GrowthScreen() {
             >
               {selectedIds.length === displayRecords.length ? <CheckSquare color={colors.primaryDark} size={20} /> : <Square color="#CBD5E1" size={20} />}
               <Text style={[styles.selectAllText, selectedIds.length === displayRecords.length && { color: colors.primaryDark }]}>
-                Select All
+                {getText('Select All', '全选', 'Pilih Semua')}
               </Text>
             </Pressable>
 
@@ -389,7 +390,7 @@ export default function GrowthScreen() {
               style={[styles.deleteBatchBtn, selectedIds.length > 0 ? styles.deleteBatchActive : styles.deleteBatchDisabled]}
             >
               <Trash2 color="#FFFFFF" size={16} />
-              <Text style={styles.deleteBatchText}>Delete ({selectedIds.length})</Text>
+              <Text style={styles.deleteBatchText}>{getText('Delete', '删除', 'Padam')} ({selectedIds.length})</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -428,7 +429,7 @@ export default function GrowthScreen() {
           );
         }) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No health records found.</Text>
+            <Text style={styles.emptyStateText}>{getText('No health records found.', '没有找到健康记录。', 'Tiada rekod kesihatan ditemui.')}</Text>
           </View>
         )}
       </ScrollView>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, IconButton } from './Common';
+import { useLanguage } from '../context/LanguageContext';
 import { colors } from '../theme/colors';
 
 export default function MealPlanDurationModal({
@@ -13,11 +14,14 @@ export default function MealPlanDurationModal({
   onClose: () => void;
   onSelect: (days: number) => void;
 }) {
+  const { language } = useLanguage();
+  const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
+
   const options = [
-    { days: 1, label: '1 Day', subtitle: 'Quick plan' },
-    { days: 3, label: '3 Days', subtitle: 'Short term' },
-    { days: 5, label: '5 Days', subtitle: 'Weekday plan' },
-    { days: 7, label: '7 Days', subtitle: 'Full week' },
+    { days: 1, label: getText('1 Day', '1 天', '1 Hari'), subtitle: getText('Quick plan', '快速计划', 'Pelan pantas') },
+    { days: 3, label: getText('3 Days', '3 天', '3 Hari'), subtitle: getText('Short term', '短期', 'Jangka pendek') },
+    { days: 5, label: getText('5 Days', '5 天', '5 Hari'), subtitle: getText('Weekday plan', '工作日计划', 'Pelan hari bekerja') },
+    { days: 7, label: getText('7 Days', '7 天', '7 Hari'), subtitle: getText('Full week', '整周', 'Seminggu penuh') },
   ];
 
   return (
@@ -30,8 +34,8 @@ export default function MealPlanDurationModal({
                 <Ionicons name="calendar" size={24} color="white" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>Select Meal Plan Duration</Text>
-                <Text style={styles.sub}>Choose how many days to plan</Text>
+                <Text style={styles.title}>{getText('Select Meal Plan Duration', '选择膳食计划时长', 'Pilih Tempoh Pelan Makanan')}</Text>
+                <Text style={styles.sub}>{getText('Choose how many days to plan', '选择要规划的天数', 'Pilih bilangan hari untuk dirancang')}</Text>
               </View>
               <IconButton icon="close" onPress={onClose} />
             </View>

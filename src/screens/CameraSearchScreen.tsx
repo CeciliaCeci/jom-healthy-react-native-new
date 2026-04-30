@@ -67,11 +67,11 @@ export default function CameraSearchScreen() {
           });
         }, 600);
       } else {
-        Alert.alert('Recognition Failed', 'No food detected in image.');
+        Alert.alert(getText('Recognition Failed', '识别失败', 'Pengecaman Gagal'), getText('No food detected in image.', '图片中未检测到食物。', 'Tiada makanan dikesan dalam imej.'));
       }
     } catch (error) {
       console.error('AI Detection Error:', error);
-      Alert.alert('Error', 'Could not connect to AI server.');
+      Alert.alert(getText('Error', '错误', 'Ralat'), getText('Could not connect to AI server.', '无法连接到 AI 服务器。', 'Tidak dapat menyambung ke pelayan AI.'));
     } finally {
       setCapturing(false);
     }

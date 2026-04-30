@@ -27,8 +27,9 @@ const BASE_URL = "https://jom-healthy-java.onrender.com";  //Backend URL
 
 export default function HealthCheckScreen() {
   const navigation = useNavigation<any>();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { children } = useChildProfile();
+  const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
   
   // --- The state for the form ---
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -227,7 +228,7 @@ export default function HealthCheckScreen() {
             {selectedChildId ? (
               <View style={styles.lockedBox}>
                 <Text style={styles.lockedText}>
-                  {gender === 1 ? '👦 Boy' : '👧 Girl'}
+                  {gender === 1 ? getText('👦 Boy', '👦 男孩', '👦 Lelaki') : getText('👧 Girl', '👧 女孩', '👧 Perempuan')}
                 </Text>
               </View>
             ) : (
@@ -236,13 +237,13 @@ export default function HealthCheckScreen() {
                   onPress={() => { setGender(1); setBmi(null); setAdviceText(""); }} 
                   style={[styles.genderBtn, gender === 1 ? styles.genderBoyActive : styles.genderInactive]}
                 >
-                  <Text style={[styles.genderBtnText, gender === 1 ? styles.textBoyActive : styles.textInactive]}>👦 Boy</Text>
+                  <Text style={[styles.genderBtnText, gender === 1 ? styles.textBoyActive : styles.textInactive]}>{getText('👦 Boy', '👦 男孩', '👦 Lelaki')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   onPress={() => { setGender(0); setBmi(null); setAdviceText(""); }} 
                   style={[styles.genderBtn, gender === 0 ? styles.genderGirlActive : styles.genderInactive]}
                 >
-                  <Text style={[styles.genderBtnText, gender === 0 ? styles.textGirlActive : styles.textInactive]}>👧 Girl</Text>
+                  <Text style={[styles.genderBtnText, gender === 0 ? styles.textGirlActive : styles.textInactive]}>{getText('👧 Girl', '👧 女孩', '👧 Perempuan')}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -265,7 +266,7 @@ export default function HealthCheckScreen() {
                     {birthday || 'YYYY/MM/DD'}
                   </Text>
                 </View>
-                <Text style={styles.dateButtonAction}>{showBirthdayPicker ? 'Hide' : 'Choose'}</Text>
+                <Text style={styles.dateButtonAction}>{showBirthdayPicker ? getText('Hide', '隐藏', 'Sembunyi') : getText('Choose', '选择', 'Pilih')}</Text>
               </Pressable>
             )}
 
@@ -346,15 +347,15 @@ export default function HealthCheckScreen() {
               {isLoading ? (
                 <View style={styles.loadingBox}>
                   <ActivityIndicator size="small" color={colors.primaryDark} />
-                  <Text style={styles.loadingText}>Analyzing WHO Growth Standard...</Text>
+                  <Text style={styles.loadingText}>{getText('Analyzing WHO Growth Standard...', '正在分析 WHO 生长标准...', 'Menganalisis Standard Pertumbuhan WHO...')}</Text>
                 </View>
               ) : isError ? (
-                <Text style={styles.errorText}>Failed to connect to the medical engine. Please try again.</Text>
+                <Text style={styles.errorText}>{getText('Failed to connect to the medical engine. Please try again.', '无法连接到医疗引擎，请重试。', 'Gagal menyambung ke enjin perubatan. Sila cuba lagi.')}</Text>
               ) : adviceText ? (
                 <View>
                   <View style={styles.adviceHeader}>
                     <HeartPulse color={colors.primaryDark} size={20} />
-                    <Text style={styles.adviceTitle}>WHO Medical Analysis</Text>
+                    <Text style={styles.adviceTitle}>{getText('WHO Medical Analysis', 'WHO 医学分析', 'Analisis Perubatan WHO')}</Text>
                   </View>
                   <Text style={styles.adviceBody}>
                     {formatAdviceText(adviceText).trim()}
@@ -365,7 +366,7 @@ export default function HealthCheckScreen() {
 
             {selectedChildId ? (
               <PrimaryButton 
-                title={t('saveRecommendations') || 'Save Record'} 
+                title={t('saveRecommendations') || getText('Save Record', '保存记录', 'Simpan Rekod')} 
                 icon="save" 
                 disabled={isLoading || isError}
                 onPress={() => navigation.goBack()} 
@@ -374,7 +375,7 @@ export default function HealthCheckScreen() {
             ) : (
               <View style={{ marginTop: 24, alignItems: 'center' }}>
                 <Text style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', paddingHorizontal: 16 }}>
-                  {t('selectProfileToSave') || '* Select a profile above to save this record.'}
+                  {t('selectProfileToSave') || getText('* Select a profile above to save this record.', '* 请选择上方的档案来保存这条记录。', '* Pilih profil di atas untuk menyimpan rekod ini.')}
                 </Text>
               </View>
             )}
@@ -386,7 +387,7 @@ export default function HealthCheckScreen() {
       {/* 选择面板 Modals */}
       <RangeModal 
         visible={showHeightPicker} 
-        title="Select Height" 
+        title={getText('Select Height', '选择身高', 'Pilih Tinggi')} 
         options={HEIGHT_STANDARDS} 
         unit="cm" 
         onClose={() => setShowHeightPicker(false)} 
@@ -394,7 +395,7 @@ export default function HealthCheckScreen() {
       />
       <RangeModal 
         visible={showWeightPicker} 
-        title="Select Weight" 
+        title={getText('Select Weight', '选择体重', 'Pilih Berat')} 
         options={WEIGHT_STANDARDS} 
         unit="kg" 
         onClose={() => setShowWeightPicker(false)} 

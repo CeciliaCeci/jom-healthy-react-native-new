@@ -15,6 +15,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useChildProfile } from '../context/ChildProfileContext';
+import { useLanguage } from '../context/LanguageContext';
 import { colors } from '../theme/colors';
 import { Card, Chip, IconButton, PrimaryButton } from './Common';
 import ChildAvatar from './ChildAvatar';
@@ -51,6 +52,8 @@ export default function AddChildModal({
   childToEdit?: Child | null;
 }) {
   const { addChild, updateChild } = useChildProfile();
+  const { language } = useLanguage();
+  const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
 
   const avatars = [
     '😊',
@@ -339,7 +342,7 @@ export default function AddChildModal({
         <Card style={styles.sheet}>
           <View style={styles.header}>
             <Text style={styles.title}>
-              {childToEdit ? 'Edit Child Profile' : 'Add Child'}
+              {childToEdit ? getText('Edit Child Profile', '编辑儿童资料', 'Edit Profil Kanak-kanak') : getText('Add Child', '添加孩子', 'Tambah Kanak-kanak')}
             </Text>
 
             <IconButton icon="close" onPress={onClose} />
@@ -349,7 +352,7 @@ export default function AddChildModal({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
-            <Text style={styles.label}>Avatar</Text>
+            <Text style={styles.label}>{getText('Avatar', '头像', 'Avatar')}</Text>
 
             <View style={styles.avatarPreviewRow}>
               <ChildAvatar
@@ -361,8 +364,11 @@ export default function AddChildModal({
 
               <View style={styles.avatarInfo}>
                 <Text style={styles.avatarHint}>
-                  Choose a random emoji avatar or upload a photo from your
-                  album.
+                  {getText(
+                    'Choose a random emoji avatar or upload a photo from your album.',
+                    '选择一个随机表情头像，或者从相册上传照片。',
+                    'Pilih avatar emoji rawak atau muat naik foto daripada album anda.'
+                  )}
                 </Text>
 
                 <View style={styles.avatarTopActions}>
@@ -375,7 +381,7 @@ export default function AddChildModal({
                       size={16}
                       color={colors.primaryDark}
                     />
-                    <Text style={styles.avatarActionText}>Random Avatar</Text>
+                    <Text style={styles.avatarActionText}>{getText('Random Avatar', '随机头像', 'Avatar Rawak')}</Text>
                   </Pressable>
 
                   <Pressable
@@ -387,7 +393,7 @@ export default function AddChildModal({
                       size={16}
                       color={colors.primaryDark}
                     />
-                    <Text style={styles.avatarActionText}>Upload Photo</Text>
+                    <Text style={styles.avatarActionText}>{getText('Upload Photo', '上传照片', 'Muat Naik Foto')}</Text>
                   </Pressable>
                 </View>
 
@@ -401,7 +407,7 @@ export default function AddChildModal({
                       size={15}
                       color={colors.primaryDark}
                     />
-                    <Text style={styles.useEmojiText}>Use Emoji Avatar</Text>
+                    <Text style={styles.useEmojiText}>{getText('Use Emoji Avatar', '使用表情头像', 'Guna Avatar Emoji')}</Text>
                   </Pressable>
                 )}
               </View>
@@ -421,7 +427,7 @@ export default function AddChildModal({
               ))}
             </View>
 
-            <Text style={styles.label}>Nickname</Text>
+            <Text style={styles.label}>{getText('Nickname', '昵称', 'Nama Panggilan')}</Text>
             <TextInput
               value={nickname}
               onChangeText={setNickname}
@@ -429,7 +435,7 @@ export default function AddChildModal({
               style={styles.input}
             />
 
-            <Text style={styles.label}>Birthday</Text>
+            <Text style={styles.label}>{getText('Birthday', '生日', 'Hari Lahir')}</Text>
             <Pressable
               style={styles.dateButton}
               onPress={() => setShowBirthdayPicker((prev) => !prev)}
@@ -444,7 +450,7 @@ export default function AddChildModal({
               </Text>
 
               <Text style={styles.dateButtonAction}>
-                {showBirthdayPicker ? 'Hide' : 'Choose'}
+                {showBirthdayPicker ? getText('Hide', '隐藏', 'Sembunyi') : getText('Choose', '选择', 'Pilih')}
               </Text>
             </Pressable>
 
@@ -475,7 +481,7 @@ export default function AddChildModal({
 
             <View style={styles.twoCols}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Height (cm)</Text>
+                <Text style={styles.label}>{getText('Height (cm)', '身高（厘米）', 'Tinggi (cm)')}</Text>
                 <TextInput
                   value={height}
                   onChangeText={setHeight}
@@ -486,7 +492,7 @@ export default function AddChildModal({
               </View>
 
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Weight (kg)</Text>
+                <Text style={styles.label}>{getText('Weight (kg)', '体重（公斤）', 'Berat (kg)')}</Text>
                 <TextInput
                   value={weight}
                   onChangeText={setWeight}
@@ -497,23 +503,23 @@ export default function AddChildModal({
               </View>
             </View>
 
-            <Text style={styles.label}>Gender</Text>
+            <Text style={styles.label}>{getText('Gender', '性别', 'Jantina')}</Text>
             <View style={styles.genderRow}>
               <Chip
-                label="Boy"
+                label={getText('Boy', '男孩', 'Lelaki')}
                 icon="male"
                 selected={gender === 'boy'}
                 onPress={() => setGender('boy')}
               />
               <Chip
-                label="Girl"
+                label={getText('Girl', '女孩', 'Perempuan')}
                 icon="female"
                 selected={gender === 'girl'}
                 onPress={() => setGender('girl')}
               />
             </View>
 
-            <Text style={styles.label}>Cannot Eat / Allergies</Text>
+            <Text style={styles.label}>{getText('Cannot Eat / Allergies', '不能吃 / 过敏', 'Tidak Boleh Makan / Alahan')}</Text>
             <TagInput
               tags={allergies}
               onChange={setAllergies}
@@ -526,35 +532,35 @@ export default function AddChildModal({
                 'Wheat',
                 'Tree nuts',
               ]}
-              placeholder="Add allergy..."
+              placeholder={getText('Add allergy...', '添加过敏项...', 'Tambah alahan...')}
             />
 
-            <Text style={styles.label}>Dietary Restrictions</Text>
+            <Text style={styles.label}>{getText('Dietary Restrictions', '饮食限制', 'Sekatan Diet')}</Text>
             <View style={styles.restrictions}>
               <RowSwitch
-                label="Vegetarian"
+                label={getText('Vegetarian', '素食', 'Vegetarian')}
                 value={restrictions.vegetarian}
                 keyName="vegetarian"
               />
               <RowSwitch
-                label="Halal"
+                label={getText('Halal', '清真', 'Halal')}
                 value={restrictions.halal}
                 keyName="halal"
               />
               <RowSwitch
-                label="Lactose Intolerance"
+                label={getText('Lactose Intolerance', '乳糖不耐受', 'Intoleransi Laktosa')}
                 value={restrictions.lactoseIntolerance}
                 keyName="lactoseIntolerance"
               />
               <RowSwitch
-                label="No Seafood"
+                label={getText('No Seafood', '不吃海鲜', 'Tiada Makanan Laut')}
                 value={restrictions.noSeafood}
                 keyName="noSeafood"
               />
             </View>
 
             <PrimaryButton
-              title={childToEdit ? 'Save Changes' : 'Create Profile'}
+              title={childToEdit ? getText('Save Changes', '保存更改', 'Simpan Perubahan') : getText('Create Profile', '创建档案', 'Cipta Profil')}
               icon="save"
               disabled={!valid}
               onPress={save}

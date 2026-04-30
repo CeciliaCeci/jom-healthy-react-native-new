@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { useChildProfile } from './ChildProfileContext';
+import { useLanguage } from './LanguageContext';
 import { generateMealPlanByAi } from '../services/api';
 
 type Ingredient = {
@@ -127,15 +128,120 @@ function isValidYoutubeUrl(url?: string | null) {
   return lower.includes('youtube.com/watch') || lower.includes('youtu.be/') || lower.includes('youtube.com/results?search_query=');
 }
 
+function normalizeLanguageCode(language?: string | null) {
+  const text = String(language || 'en').toLowerCase();
+
+  if (text === 'zh' || text === 'cn' || text.startsWith('zh-') || text.includes('chinese')) {
+    return 'zh';
+  }
+
+  if (text === 'ms' || text === 'my' || text.startsWith('ms-') || text.includes('malay')) {
+    return 'ms';
+  }
+
+  return 'en';
+}
+
+function translateMealName(name: string, language: string) {
+  const lang = normalizeLanguageCode(language);
+  const text = String(name || '').trim();
+
+  if (!text || lang === 'en') return text;
+
+  const replacements = lang === 'zh'
+    ? [
+        [/\bfried rice\b/gi, '炒饭'],
+        [/\bchicken rice\b/gi, '鸡饭'],
+        [/\bfried noodle(s)?\b/gi, '炒面'],
+        [/\bnoodle(s)?\b/gi, '面'],
+        [/\brice\b/gi, '米饭'],
+        [/\bchicken\b/gi, '鸡肉'],
+        [/\bbeef\b/gi, '牛肉'],
+        [/\bfish\b/gi, '鱼'],
+        [/\begg(s)?\b/gi, '鸡蛋'],
+        [/\bvegetable(s)?\b/gi, '蔬菜'],
+        [/\bsoup\b/gi, '汤'],
+        [/\bporridge\b/gi, '粥'],
+        [/\bsalad\b/gi, '沙拉'],
+        [/\bsandwich\b/gi, '三明治'],
+        [/\bbread\b/gi, '面包'],
+        [/\bpasta\b/gi, '意面'],
+        [/\bcurry\b/gi, '咖喱'],
+        [/\bgrilled\b/gi, '烤'],
+        [/\bsteamed\b/gi, '蒸'],
+        [/\bbaked\b/gi, '烘烤'],
+        [/\bstir fried\b/gi, '炒'],
+        [/\bhealthy\b/gi, '健康'],
+      ]
+    : [
+        [/\bfried rice\b/gi, 'nasi goreng'],
+        [/\bchicken rice\b/gi, 'nasi ayam'],
+        [/\bfried noodle(s)?\b/gi, 'mi goreng'],
+        [/\bnoodle(s)?\b/gi, 'mi'],
+        [/\brice\b/gi, 'nasi'],
+        [/\bchicken\b/gi, 'ayam'],
+        [/\bbeef\b/gi, 'daging lembu'],
+        [/\bfish\b/gi, 'ikan'],
+        [/\begg(s)?\b/gi, 'telur'],
+        [/\bvegetable(s)?\b/gi, 'sayur-sayuran'],
+        [/\bsoup\b/gi, 'sup'],
+        [/\bporridge\b/gi, 'bubur'],
+        [/\bsalad\b/gi, 'salad'],
+        [/\bsandwich\b/gi, 'sandwic'],
+        [/\bbread\b/gi, 'roti'],
+        [/\bpasta\b/gi, 'pasta'],
+        [/\bcurry\b/gi, 'kari'],
+        [/\bgrilled\b/gi, 'panggang'],
+        [/\bsteamed\b/gi, 'kukus'],
+        [/\bbaked\b/gi, 'bakar'],
+        [/\bstir fried\b/gi, 'tumis'],
+        [/\bhealthy\b/gi, 'sihat'],
+      ];
+
+  return replacements.reduce((current, [pattern, replacement]) => current.replace(pattern as RegExp, replacement as string), text).replace(/\s+/g, ' ').trim();
+}
+
+function buildMealLanguageInstruction(language: string) {
+  const lang = normalizeLanguageCode(language);
+
+  if (lang === 'zh') {
+    return 'Return meal names, categories, ingredients and instructions in Simplified Chinese when possible, while keeping food identifiers accurate.';
+  }
+
+  if (lang === 'ms') {
+    return 'Return meal names, categories, ingredients and instructions in Malay when possible, while keeping food identifiers accurate.';
+  }
+
+  return 'Return meal names, categories, ingredients and instructions in English.';
+}
+
 function normalizeAiMeal(meal: any): MealRecipe {
   const rawImageUrl = meal?.strMealThumb || meal?.imageUrl || '';
   const rawYoutubeUrl = meal?.strYoutube || meal?.youtubeUrl || '';
+  const sourceName = meal?.strMeal || meal?.name || meal?.strMealEn || meal?.nameEn || 'AI Recommended Meal';
+  const sourceCategory = meal?.strCategory || meal?.category || 'AI Meal';
+  const sourceArea = meal?.strArea || meal?.area || 'Healthy';
+
+  const mealNameZh = meal?.strMealCn || meal?.strMealCN || meal?.strMealZh || meal?.nameCn || meal?.nameCN || meal?.nameZh || translateMealName(sourceName, 'zh');
+  const mealNameMs = meal?.strMealMs || meal?.nameMs || translateMealName(sourceName, 'ms');
 
   return {
     idMeal: meal?.idMeal || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    strMeal: meal?.strMeal || meal?.name || 'AI Recommended Meal',
-    strCategory: meal?.strCategory || meal?.category || 'AI Meal',
-    strArea: meal?.strArea || meal?.area || 'Healthy',
+    strMeal: sourceName,
+    strMealEn: meal?.strMealEn || meal?.strMeal || meal?.nameEn || meal?.name || sourceName,
+    strMealCn: mealNameZh,
+    strMealMs: mealNameMs,
+    nameEn: meal?.nameEn || meal?.strMealEn || meal?.strMeal || meal?.name || sourceName,
+    nameCn: meal?.nameCn || meal?.nameCN || meal?.nameZh || mealNameZh,
+    nameMs: meal?.nameMs || mealNameMs,
+    strCategory: sourceCategory,
+    strCategoryEn: meal?.strCategoryEn || meal?.strCategory || meal?.categoryEn || meal?.category || sourceCategory,
+    strCategoryCn: meal?.strCategoryCn || meal?.strCategoryCN || meal?.strCategoryZh || meal?.categoryCn || meal?.categoryCN || meal?.categoryZh || translateMealName(sourceCategory, 'zh'),
+    strCategoryMs: meal?.strCategoryMs || meal?.categoryMs || translateMealName(sourceCategory, 'ms'),
+    strArea: sourceArea,
+    strAreaEn: meal?.strAreaEn || meal?.strArea || meal?.areaEn || meal?.area || sourceArea,
+    strAreaCn: meal?.strAreaCn || meal?.strAreaCN || meal?.strAreaZh || meal?.areaCn || meal?.areaCN || meal?.areaZh || translateMealName(sourceArea, 'zh'),
+    strAreaMs: meal?.strAreaMs || meal?.areaMs || translateMealName(sourceArea, 'ms'),
     strInstructions: meal?.strInstructions || meal?.instructions || '',
     strMealThumb: isValidImageUrl(rawImageUrl) ? rawImageUrl : null,
     strYoutube: isValidYoutubeUrl(rawYoutubeUrl) ? rawYoutubeUrl : null,
@@ -295,6 +401,7 @@ export function AiMealPlanGenerationProvider({
   currentRouteName?: string;
 }) {
   const { activeChild, getOwnerKey, nutritionNeeds } = useChildProfile();
+  const { language } = useLanguage();
 
   const [showModal, setShowModal] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -349,9 +456,10 @@ export function AiMealPlanGenerationProvider({
           targetProtein: targets.protein,
           targetFat: targets.fat,
           days: 1,
+          language: normalizeLanguageCode(language),
           mealPreference: prompt.trim()
-            ? `${prompt.trim()} for day ${i + 1}, make it varied from other days`
-            : `Recommend by child profile for day ${i + 1}, make it varied from other days`,
+            ? `${prompt.trim()} for day ${i + 1}, make it varied from other days. ${buildMealLanguageInstruction(language)}`
+            : `Recommend by child profile for day ${i + 1}, make it varied from other days. ${buildMealLanguageInstruction(language)}`,
         });
 
         if (!result.ok) {

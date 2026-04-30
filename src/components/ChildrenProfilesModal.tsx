@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useChildProfile } from '../context/ChildProfileContext';
+import { useLanguage } from '../context/LanguageContext';
 import { colors } from '../theme/colors';
 import { Card, IconButton, PrimaryButton, SecondaryButton } from './Common';
 import AddChildModal from './AddChildModal';
@@ -24,9 +25,12 @@ type Child = {
 
 export default function ChildrenProfilesModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { children, activeChild, removeChild, switchToChild } = useChildProfile();
+  const { language } = useLanguage();
   const [showAdd, setShowAdd] = useState(false);
   const [childToEdit, setChildToEdit] = useState<Child | null>(null);
   const [toast, setToast] = useState('');
+
+  const getText = (en: string, zh: string, ms: string) => language === 'zh' ? zh : language === 'ms' ? ms : en;
 
   const openAddChild = () => {
     setChildToEdit(null);
@@ -44,9 +48,9 @@ export default function ChildrenProfilesModal({ visible, onClose }: { visible: b
   };
 
   const deleteChild = (id: number) => {
-    Alert.alert('Delete Profile?', 'This action cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => removeChild(id) },
+    Alert.alert(getText('Delete Profile?', '删除资料？', 'Padam Profil?'), getText('This action cannot be undone.', '此操作无法撤消。', 'Tindakan ini tidak boleh dibuat asal.'), [
+      { text: getText('Cancel', '取消', 'Batal'), style: 'cancel' },
+      { text: getText('Delete', '删除', 'Padam'), style: 'destructive', onPress: () => removeChild(id) },
     ]);
   };
 
@@ -56,18 +60,18 @@ export default function ChildrenProfilesModal({ visible, onClose }: { visible: b
         <View style={styles.backdrop}>
           <Card style={styles.sheet}>
             <View style={styles.header}>
-              <Text style={styles.title}>Children Profiles</Text>
+              <Text style={styles.title}>{getText('Children Profiles', '儿童资料', 'Profil Kanak-kanak')}</Text>
               <IconButton icon="close" onPress={onClose} />
             </View>
 
-            <PrimaryButton title="Add New Child" icon="add" onPress={openAddChild} />
+            <PrimaryButton title={getText('Add New Child', '添加新孩子', 'Tambah Kanak-kanak Baru')} icon="add" onPress={openAddChild} />
 
             <ScrollView style={{ marginTop: 14 }} showsVerticalScrollIndicator={false}>
               {children.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <Text style={styles.emptyEmoji}>👶</Text>
-                  <Text style={styles.emptyText}>No child profile yet</Text>
-                  <Text style={styles.emptySub}>Tap Add New Child to create one.</Text>
+                  <Text style={styles.emptyText}>{getText('No child profile yet', '还没有儿童资料', 'Belum ada profil kanak-kanak')}</Text>
+                  <Text style={styles.emptySub}>{getText('Tap Add New Child to create one.', '点击“添加新孩子”创建一个。', 'Ketik Tambah Kanak-kanak Baru untuk mencipta satu.')}</Text>
                 </View>
               ) : (
                 children.map((child: Child) => {
@@ -82,9 +86,9 @@ export default function ChildrenProfilesModal({ visible, onClose }: { visible: b
                       <View style={{ flex: 1 }}>
                         <Text style={styles.childName}>{child.nickname}</Text>
                         <Text style={styles.childInfo}>
-                          {child.age} years · {child.height}cm · {child.weight}kg
+                          {child.age} {getText('years', '岁', 'tahun')} · {child.height}cm · {child.weight}kg
                         </Text>
-                        {active && <Text style={styles.activeText}>Active profile</Text>}
+                        {active && <Text style={styles.activeText}>{getText('Active profile', '当前资料', 'Profil aktif')}</Text>}
                       </View>
                       <View style={styles.actions}>
                         <IconButton icon="pencil" size={36} onPress={() => openEditChild(child)} />
@@ -96,7 +100,7 @@ export default function ChildrenProfilesModal({ visible, onClose }: { visible: b
               )}
             </ScrollView>
 
-            <SecondaryButton title="Done" onPress={onClose} style={{ marginTop: 14 }} />
+            <SecondaryButton title={getText('Done', '完成', 'Selesai')} onPress={onClose} style={{ marginTop: 14 }} />
           </Card>
         </View>
       </Modal>
@@ -105,7 +109,7 @@ export default function ChildrenProfilesModal({ visible, onClose }: { visible: b
         visible={visible && showAdd}
         childToEdit={childToEdit}
         onClose={handleCloseAdd}
-        onSuccess={() => setToast(childToEdit ? 'Profile Updated!' : 'Profile Created!')}
+        onSuccess={() => setToast(childToEdit ? getText('Profile Updated!', '资料已更新！', 'Profil dikemas kini!') : getText('Profile Created!', '资料已创建！', 'Profil dicipta!'))}
       />
 
       {!!toast && <Toast message={toast} onClose={() => setToast('')} />}

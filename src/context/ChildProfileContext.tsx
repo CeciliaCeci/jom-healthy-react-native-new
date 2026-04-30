@@ -222,6 +222,35 @@ function makeMeal(type: Meal['type']): Meal {
   };
 }
 
+function normalizeSavedRecipeMeal(meal: Meal): Meal {
+  return {
+    ...meal,
+    name: meal.name || meal.nameEn || meal.nameCn || meal.nameMs || '',
+    nameEn: meal.nameEn || meal.name || meal.nameCn || meal.nameMs || '',
+    nameCn: meal.nameCn || meal.strMealCn || meal.strMealCN || meal.strMealZh || '',
+    nameMs: meal.nameMs || meal.strMealMs || '',
+    strMeal: meal.strMeal || meal.name || meal.nameEn || '',
+    strMealEn: meal.strMealEn || meal.strMeal || meal.nameEn || meal.name || '',
+    strMealCn: meal.strMealCn || meal.strMealCN || meal.strMealZh || meal.nameCn || '',
+    strMealMs: meal.strMealMs || meal.nameMs || '',
+    strInstructions: meal.strInstructions || meal.strInstructionsEn || meal.instructions || meal.instructionsEn || '',
+    strInstructionsEn: meal.strInstructionsEn || meal.strInstructions || meal.instructionsEn || meal.instructions || '',
+    strInstructionsCn: meal.strInstructionsCn || meal.strInstructionsCN || meal.strInstructionsZh || meal.instructionsCn || meal.instructionsCN || meal.instructionsZh || '',
+    strInstructionsMs: meal.strInstructionsMs || meal.instructionsMs || '',
+    instructionsEn: meal.instructionsEn || meal.strInstructionsEn || meal.strInstructions || meal.instructions || '',
+    instructionsCn: meal.instructionsCn || meal.instructionsCN || meal.instructionsZh || meal.strInstructionsCn || meal.strInstructionsCN || meal.strInstructionsZh || '',
+    instructionsMs: meal.instructionsMs || meal.strInstructionsMs || '',
+    strCategory: meal.strCategory || meal.strCategoryEn || meal.category || '',
+    strCategoryEn: meal.strCategoryEn || meal.strCategory || meal.categoryEn || meal.category || '',
+    strCategoryCn: meal.strCategoryCn || meal.strCategoryCN || meal.strCategoryZh || meal.categoryCn || meal.categoryCN || meal.categoryZh || '',
+    strCategoryMs: meal.strCategoryMs || meal.categoryMs || '',
+    strArea: meal.strArea || meal.strAreaEn || meal.area || '',
+    strAreaEn: meal.strAreaEn || meal.strArea || meal.areaEn || meal.area || '',
+    strAreaCn: meal.strAreaCn || meal.strAreaCN || meal.strAreaZh || meal.areaCn || meal.areaCN || meal.areaZh || '',
+    strAreaMs: meal.strAreaMs || meal.areaMs || '',
+  };
+}
+
 const generateMealsForDay = (): Meal[] => [
   makeMeal('breakfast'),
   makeMeal('lunch'),
@@ -528,20 +557,22 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
   };
 
   const addSavedRecipe = (meal: Meal) => {
+    const normalizedMeal = normalizeSavedRecipeMeal(meal);
+
     setSavedRecipes((prev) => {
-      if (prev.some((item) => item.id === meal.id)) return prev;
+      if (prev.some((item) => item.id === normalizedMeal.id)) return prev;
 
       return [
         {
-          id: meal.id,
-          name: meal.name,
-          nameEn: meal.nameEn || meal.name,
-          nameCn: meal.nameCn,
-          nameMs: meal.nameMs,
-          imageUrl: meal.imageUrl || meal.strMealThumb,
-          strMealThumb: meal.strMealThumb,
-          mealIconEmoji: meal.mealIconEmoji,
-          meal,
+          id: normalizedMeal.id,
+          name: normalizedMeal.name,
+          nameEn: normalizedMeal.nameEn,
+          nameCn: normalizedMeal.nameCn,
+          nameMs: normalizedMeal.nameMs,
+          imageUrl: normalizedMeal.imageUrl || normalizedMeal.strMealThumb,
+          strMealThumb: normalizedMeal.strMealThumb,
+          mealIconEmoji: normalizedMeal.mealIconEmoji,
+          meal: normalizedMeal,
           savedAt: new Date().toISOString(),
         },
         ...prev,
