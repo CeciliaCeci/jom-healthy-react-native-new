@@ -1,6 +1,6 @@
 {
   "name": "jomhealthy-react-native",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -27,6 +27,7 @@
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.12",
+    "expo-localization": "~17.0.8",
     "expo-router": "~6.0.23",
     "expo-sharing": "~14.0.8",
     "expo-speech-recognition": "^3.1.3",

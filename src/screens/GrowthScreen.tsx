@@ -38,6 +38,7 @@ type Point = {
 };
 
 function SimpleLineChart({ data, unit, showWhoLines }: { data: Point[]; unit: string, showWhoLines: boolean }) {
+  const { t } = useLanguage();
   const containerHeight = 200;
   const topPadding = 24;
   const bottomPadding = 30;
@@ -95,8 +96,6 @@ function SimpleLineChart({ data, unit, showWhoLines }: { data: Point[]; unit: st
   const riskBottomArea = showWhoLines && data[0]?.neg1 ? 
     data.map((d, i) => `${x(i)},${y(d.neg1!)}`).join(' ') + ` ${x(data.length - 1)},${y(min)} ${x(0)},${y(min)}` : '';
 
-
-  const { t } = useLanguage();
 
   return (
     <View style={styles.chartWrap}>

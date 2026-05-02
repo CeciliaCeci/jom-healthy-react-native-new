@@ -1,6 +1,23 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Localization from 'expo-localization';
+import { Platform, NativeModules } from 'react-native';
 
 type Language = 'en' | 'zh' | 'ms';
+
+function normalizeLanguageCode(language?: string | null) {
+  const text = String(language || 'en').toLowerCase();
+
+  if (text === 'zh' || text === 'cn' || text.startsWith('zh-') || text.includes('chinese')) {
+    return 'zh';
+  }
+
+  if (text === 'ms' || text === 'my' || text.startsWith('ms-') || text.includes('malay')) {
+    return 'ms';
+  }
+
+  return 'en';
+}
 
 interface LanguageContextType {
   language: Language;
@@ -454,8 +471,83 @@ const translations = {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+const LANGUAGE_STORAGE_KEY = 'JOMHEALTHY_APP_LANGUAGE_V1';
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState<Language>('en');
+  const [language, setLanguageState] = useState<Language>('en');
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (saved && mounted) {
+          const normalizedSaved = normalizeLanguageCode(saved);
+          setLanguageState(normalizedSaved as Language);
+          return;
+        }
+
+        // Use expo-localization securely since it's installed
+        try {
+          const locales = Localization.getLocales();
+          if (locales && locales.length > 0) {
+            const code = normalizeLanguageCode(locales[0].languageCode);
+            if (mounted) setLanguageState(code as Language);
+            return;
+          }
+        } catch (e) {
+          if (__DEV__) console.log('expo-localization getLocales failed:', e);
+        }
+
+        // Fallback: React Native NativeModules Platform check
+        try {
+          let systemLocale = null;
+          if (Platform.OS === 'ios') {
+            systemLocale =
+              NativeModules.SettingsManager?.settings?.AppleLocale ||
+              NativeModules.SettingsManager?.settings?.AppleLanguages?.[0];
+          } else if (Platform.OS === 'android') {
+            systemLocale = NativeModules.I18nManager?.localeIdentifier;
+          }
+
+          if (systemLocale) {
+            const code = normalizeLanguageCode(systemLocale);
+            if (mounted) setLanguageState(code as Language);
+            return;
+          }
+        } catch (e) {
+          /* ignore */
+        }
+
+        // Fallback: Intl
+        try {
+          const intlLocale = (Intl as any)?.DateTimeFormat?.()?.resolvedOptions?.()?.locale;
+          if (intlLocale) {
+            const code = normalizeLanguageCode(String(intlLocale));
+            if (mounted) setLanguageState(code as Language);
+            return;
+          }
+        } catch (e) {
+          /* ignore */
+        }
+
+        if (__DEV__) console.log('No device locale detected; using default language');
+      } catch (e) {
+        // ignore and keep default
+        console.log('Language detect failed:', e);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, lang).catch(() => {});
+  };
 
   const t = (key: string): string => {
     return translations[language][key as keyof typeof translations['en']] || key;
