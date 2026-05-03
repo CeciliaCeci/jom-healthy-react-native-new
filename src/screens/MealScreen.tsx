@@ -809,6 +809,14 @@ export default function MealScreen() {
   const today = useMemo(() => new Date(), []);
   const locale = normalizeLanguageCode(language) === 'zh' ? 'zh-CN' : normalizeLanguageCode(language) === 'ms' ? 'ms-MY' : 'en-US';
 
+  const { width: SCREEN_WIDTH } = Dimensions.get('window');
+  // Card container: padded by 16 left/right (content) + 14 left/right (dateContainer) = 60 total horizontal padding
+  // Available width = SCREEN_WIDTH - 60
+  // We want to fit exactly 7 cards. The gap is 6 (6 gaps = 36 total). So total width = 7 * cardWidth + 36.
+  // cardWidth = (SCREEN_WIDTH - 60 - 36) / 7
+  const cardWidth = Math.max(38, Math.floor((SCREEN_WIDTH - 60 - 36) / 7));
+  const snapInterval = cardWidth + 6;
+
   const getText = (en: string, zh: string, ms: string) => {
     const lang = normalizeLanguageCode(language);
     if (lang === 'zh') return zh;
@@ -947,7 +955,8 @@ export default function MealScreen() {
       const diffTime = selectedDate.getTime() - dateStripStart.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
       const index = 7 + diffDays;
-      const targetX = (index * 58) + 29 - (width / 2);
+      // Center the selected day
+      const targetX = (index * snapInterval) + (snapInterval / 2) - (width / 2) + 30; // compensate for screen padding
       dateStripRef.current?.scrollTo({ x: Math.max(0, targetX), animated: false });
     }, 80);
 
@@ -1410,8 +1419,8 @@ export default function MealScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.scrollableDateRow}
             decelerationRate="fast"
-            snapToInterval={58}
-            snapToAlignment="start"
+            snapToInterval={snapInterval}
+            snapToAlignment="center"
           >
             {dateTabs.map((date) => {
               const key = formatDateKey(date);
@@ -1430,6 +1439,7 @@ export default function MealScreen() {
                   onLayout={() => measureDateCard(key)}
                   style={[
                     styles.dateCard,
+                    { width: cardWidth },
                     hasPlanStatus && { backgroundColor: fillColor },
                     isSelected && !hasPlanStatus && styles.dateCardActive,
                     isSelected && hasPlanStatus && styles.dateCardSelectedWithPlan,
@@ -1660,7 +1670,7 @@ const styles = StyleSheet.create({
   calendarButtonText: { color: colors.primaryDark, fontWeight: '900', fontSize: 12 },
   fixedDateRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
   scrollableDateRow: { gap: 6, paddingRight: 6 },
-  dateCard: { width: 52, minHeight: 78, borderRadius: 15, backgroundColor: '#F7F7F5', alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
+  dateCard: { minHeight: 78, borderRadius: 15, backgroundColor: '#F7F7F5', alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
   dateCardActive: { backgroundColor: '#57B56E' },
   dateCardSelectedWithPlan: { borderWidth: 2, borderColor: '#0F172A' },
   dateDay: { fontSize: 11, fontWeight: '800', color: '#1F3B5A' },
