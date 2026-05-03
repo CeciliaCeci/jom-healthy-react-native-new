@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   Linking,
   Modal,
@@ -931,8 +932,23 @@ export default function MealScreen() {
   );
 
   useEffect(() => {
+    const unsubscribe = navigation.addListener('tabPress', () => {
+      const now = new Date();
+      setSelectedDate(now);
+      setDateStripStart(getWeekStart(now));
+      setCalendarMonth(now);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
-      dateStripRef.current?.scrollTo({ x: 7 * 58, animated: false });
+      const { width } = Dimensions.get('window');
+      const diffTime = selectedDate.getTime() - dateStripStart.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      const index = 7 + diffDays;
+      const targetX = (index * 58) + 29 - (width / 2);
+      dateStripRef.current?.scrollTo({ x: Math.max(0, targetX), animated: false });
     }, 80);
 
     return () => clearTimeout(timer);

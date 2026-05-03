@@ -515,7 +515,7 @@ export default function HomeScreen() {
 
                   <View style={styles.profileInfo}>
                     <View style={styles.profileNameRow}>
-                      <Text style={styles.profileAge}>{activeChild.age}</Text>
+                      <Text style={styles.profileAge}>{activeChild.nickname}</Text>
                       <View style={styles.onlineDot} />
                     </View>
 
