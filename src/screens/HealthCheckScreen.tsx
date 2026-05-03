@@ -19,6 +19,7 @@ import { useChildProfile } from '../context/ChildProfileContext';
 import { colors } from '../theme/colors';
 import { Card, Header, PrimaryButton, Screen } from '../components/Common';
 import ChildAvatar from '../components/ChildAvatar';
+import { saveHealthRecord } from '../utils/storage';
 
 const HEIGHT_STANDARDS = Array.from({ length: 230 }, (_, i) => i.toString()); // 0cm - 230cm
 const WEIGHT_STANDARDS = Array.from({ length: 200 }, (_, i) => i.toString()); // 0kg - 200kg
@@ -162,6 +163,44 @@ export default function HealthCheckScreen() {
       } finally {
         setIsLoading(false);
       }
+    }
+  };
+
+  const handleSaveRecord = async () => {
+    if (!selectedChildId || !bmi) return;
+    const child = children.find(c => c.id === selectedChildId);
+    if (!child) return;
+
+    // Calculate ageInMonths
+    let ageInMonths = 0;
+    let ageText = "";
+    if (birthdayDate) {
+      const today = new Date();
+      const mDiff = today.getMonth() - birthdayDate.getMonth();
+      const yDiff = today.getFullYear() - birthdayDate.getFullYear();
+      ageInMonths = yDiff * 12 + mDiff;
+      ageText = `${Math.floor(ageInMonths / 12)}${t('yearsOld') || 'Years'} ${ageInMonths % 12}Months`;
+    }
+
+    const record = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      nickname: child.nickname || 'Child',
+      ageText: ageText,
+      ageInMonths: ageInMonths,
+      height: Number(height),
+      weight: Number(weight),
+      gender: gender ?? 1,
+      bmiValue: bmi,
+      adviceText: adviceText,
+      status: status
+    };
+
+    try {
+      await saveHealthRecord(record);
+      navigation.goBack();
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -369,7 +408,7 @@ export default function HealthCheckScreen() {
                 title={t('saveRecommendations') || getText('Save Record', '保存记录', 'Simpan Rekod')} 
                 icon="save" 
                 disabled={isLoading || isError}
-                onPress={() => navigation.goBack()} 
+                onPress={handleSaveRecord} 
                 style={{ marginTop: 24, width: '100%' }} 
               />
             ) : (

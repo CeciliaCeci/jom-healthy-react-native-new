@@ -15,10 +15,12 @@ import {
   FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import Svg, { Polyline, Circle as SvgCircle } from 'react-native-svg';
 import { useLanguage } from '../context/LanguageContext';
 import { useChildProfile } from '../context/ChildProfileContext';
 import { colors } from '../theme/colors';
+import { loadHealthRecords } from '../utils/storage';
 import {
   Card,
   Chip,
@@ -76,6 +78,8 @@ export default function HomeScreen() {
   const [topicsLoading, setTopicsLoading] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState<any>(null);
   const [showTopicModal, setShowTopicModal] = useState(false);
+  const [latestRecord, setLatestRecord] = useState<any>(null);
+  const [chartRecords, setChartRecords] = useState<any[]>([]);
 
   const langCode = language === 'zh' ? 'ZH' : language === 'ms' ? 'MS' : 'EN';
   const locale = language === 'zh' ? 'zh-CN' : language === 'ms' ? 'ms-MY' : 'en-US';
@@ -85,14 +89,48 @@ export default function HomeScreen() {
     nutritionProgress.protein.current >= nutritionProgress.protein.target &&
     nutritionProgress.fat.current >= nutritionProgress.fat.target;
 
+  useFocusEffect(
+    React.useCallback(() => {
+      const fetchLatestRecord = async () => {
+        const records = await loadHealthRecords();
+        if (records && records.length > 0) {
+          // Find latest record for activeChild
+          const childRecords = records.filter(r => r.nickname === activeChild?.nickname || !activeChild);
+          if (childRecords.length > 0) {
+            const sorted = [...childRecords].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            // sorted is ascending (oldest to newest)
+            setLatestRecord(sorted[sorted.length - 1]);
+            // Keep up to 6 records for the sparkline
+            setChartRecords(sorted.slice(-6));
+          } else {
+            setLatestRecord(null);
+            setChartRecords([]);
+          }
+        } else {
+          setLatestRecord(null);
+          setChartRecords([]);
+        }
+      };
+      if (activeChild) {
+         fetchLatestRecord(); 
+         // Actually we might want to filter by activeChild's nickname, but the original implementation seems to show any latest check.
+         // Let's filter by activeChild nickname to match the child profile context.
+         // Wait, the GrowthScreen filters by records? Let's check GrowthScreen.tsx filtering logic.
+      }
+      fetchLatestRecord();
+    }, [activeChild])
+  );
+
   const lastCheckDate = useMemo(
     () =>
-      new Date().toLocaleDateString(locale, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }),
-    [locale]
+      latestRecord 
+        ? new Date(latestRecord.date).toLocaleDateString(locale, {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          })
+        : null,
+    [locale, latestRecord]
   );
 
   const getText = (en: string, zh: string, ms: string) => {
@@ -332,6 +370,26 @@ export default function HomeScreen() {
       source: 'search',
     });
   };
+  const bmiChartData = useMemo(() => {
+    if (chartRecords.length < 2) return null;
+    const values = chartRecords.map(r => r.bmiValue);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min === 0 ? 1 : max - min;
+    const width = 100;
+    const height = 40;
+    const padding = 6;
+    
+    const points = values.map((val, i) => {
+      const x = padding + (i / (values.length - 1)) * (width - padding * 2);
+      const y = height - padding - ((val - min) / range) * (height - padding * 2);
+      return { x, y, val };
+    });
+    
+    const pointsString = points.map(p => `${p.x},${p.y}`).join(' ');
+    
+    return { points, pointsString, width, height };
+  }, [chartRecords]);
   
 
   return (
@@ -526,14 +584,16 @@ export default function HomeScreen() {
                       · {activeChild.height}cm, {activeChild.weight}kg
                     </Text>
 
-                    <Text style={styles.profileLastCheck}>
-                      {t('lastCheck')}: {lastCheckDate}
-                    </Text>
+                    {lastCheckDate && (
+                      <Text style={styles.profileLastCheck}>
+                        {t('lastCheck')}: {lastCheckDate}
+                      </Text>
+                    )}
                   </View>
 
                   <View style={styles.statusBadge}>
                     <Text style={styles.statusBadgeText}>
-                      {getStatusLabel(activeChild.status)}
+                      {getStatusLabel(latestRecord?.status || 'Normal')}
                     </Text>
                   </View>
                 </View>
@@ -596,7 +656,15 @@ export default function HomeScreen() {
             onPress={() => navigation.navigate('Growth')}
           >
             <View style={styles.growthHeaderRow}>
-              <Text style={styles.growthTitle}>{t('growthOverview')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.growthTitle}>{t('growthOverview')}</Text>
+                
+                {latestRecord && (
+                  <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8 }}>
+                     <Text style={{ color: '#059669', fontSize: 12, fontWeight: '700' }}>BMI {latestRecord.bmiValue}</Text>
+                  </View>
+                )}
+              </View>
 
               <View style={styles.growthArrow}>
                 <Ionicons
@@ -608,11 +676,38 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.growthLineWrap}>
-              <View style={styles.growthDottedLine} />
-              <View style={[styles.growthDot, { left: '0%' }]} />
-              <View style={[styles.growthDot, { left: '32%' }]} />
-              <View style={[styles.growthDot, { left: '64%' }]} />
-              <View style={[styles.growthDot, { right: 0 }]} />
+              {bmiChartData ? (
+                <Svg width="100%" height={bmiChartData.height}>
+                  {/* Keep dotted line as background reference? No, maybe just chart */}
+                  <Polyline
+                    points={bmiChartData.pointsString}
+                    fill="none"
+                    stroke={colors.primaryDark}
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {bmiChartData.points.map((p, i) => (
+                    <SvgCircle
+                      key={i}
+                      cx={p.x}
+                      cy={p.y}
+                      r="4"
+                      fill="#FFFFFF"
+                      stroke={colors.primaryDark}
+                      strokeWidth="2"
+                    />
+                  ))}
+                </Svg>
+              ) : (
+                <>
+                  <View style={styles.growthDottedLine} />
+                  <View style={[styles.growthDot, { left: '0%' }]} />
+                  <View style={[styles.growthDot, { left: '32%' }]} />
+                  <View style={[styles.growthDot, { left: '64%' }]} />
+                  <View style={[styles.growthDot, { right: 0 }]} />
+                </>
+              )}
             </View>
 
             <Text style={styles.growthHint}>
