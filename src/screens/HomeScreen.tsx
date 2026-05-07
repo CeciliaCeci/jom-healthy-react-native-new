@@ -42,6 +42,7 @@ import Markdown from 'react-native-markdown-display';
 // Use for details of each type of health insights, JJ
 import { FileText, X, ExternalLink } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import FloatingAIChat from "../components/FloatingAIChat";
 
 type FoodSuggestion = {
   label: string;
@@ -840,6 +841,9 @@ export default function HomeScreen() {
         visible={showChildren}
         onClose={() => setShowChildren(false)}
       />
+
+      <FloatingAIChat />
+      
     </>
   );
 }
@@ -1270,3 +1274,4 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
