@@ -10,7 +10,7 @@ router = APIRouter()
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-model = genai.GenerativeModel("gemini-3.1-flash-lite")
+model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
 
 class ChatRequest(BaseModel):
     message: str
