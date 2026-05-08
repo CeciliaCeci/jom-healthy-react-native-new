@@ -5,6 +5,6 @@ app = FastAPI()
 
 app.include_router(ai_chat_router, prefix="/ai")
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"message": "Backend running"}
