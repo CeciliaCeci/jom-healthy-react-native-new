@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-const API_URL = "http://YOUR_IP:8000/ai/chat";
+const API_URL = "https://jom-healthy-react-native-new-1.onrender.com";
 
 export default function FloatingAIChat() {
   const pan = useRef(new Animated.ValueXY({ x: 300, y: 600 })).current;
