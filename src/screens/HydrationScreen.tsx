@@ -15,6 +15,16 @@ const DRINK_TYPES = [
   { id: 'Other', icon: '➕', color: '#6B7280' },
 ];
 
+// Generates a consistent unique color based on the drink's name
+const getCustomColor = (drinkName: string) => {
+  const customColors = ['#F472B6', '#38BDF8', '#FB923C', '#A3E635', '#C084FC', '#FB7185', '#2DD4BF', '#FCD34D'];
+  let hash = 0;
+  for (let i = 0; i < drinkName.length; i++) {
+    hash = drinkName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return customColors[Math.abs(hash) % customColors.length];
+};
+
 export default function HydrationScreen({ navigation }: any) {
   const { activeChild, todayWaterIntake, dailyWaterGoal, addWater, hydrationHistory } = useChildProfile();
 
@@ -56,7 +66,7 @@ export default function HydrationScreen({ navigation }: any) {
     return {
       type: key,
       amount: groupedData[key],
-      color: defaultType ? defaultType.color : '#6B7280' // default grey for custom drinks
+      color: defaultType ? defaultType.color : getCustomColor(key)
     };
   });
 
@@ -199,7 +209,8 @@ export default function HydrationScreen({ navigation }: any) {
           <Text style={styles.emptyText}>No drinks logged yet today.</Text>
         ) : (
           todaysRecords.map((item) => {
-            const drinkColor = DRINK_TYPES.find(d => d.id === item.drinkType)?.color || '#6B7280';
+            const defaultType = DRINK_TYPES.find(d => d.id === item.drinkType);
+            const drinkColor = defaultType ? defaultType.color : getCustomColor(item.drinkType || '');
             return (
               <View key={item.id} style={styles.historyItem}>
                 <View style={styles.historyLeft}>
