@@ -35,7 +35,7 @@ type FoodNutrition = {
   protein?: number;
   carbohydrateG?: number;
   carbs?: number;
-  imageUrl?: string;
+  picUrl?: string;
 
   healthScore?: number;
   healthGrade?: string;
@@ -331,8 +331,8 @@ export default function FoodInfoScreen() {
         ) : (
           <>
             <View style={styles.foodCard}>
-              {food?.imageUrl ? (
-                <Image source={{ uri: food.imageUrl }} style={styles.foodImage} />
+              {food?.picUrl ? (
+                <Image source={{ uri: food.picUrl }} style={styles.foodImage} />
               ) : (
                 <View style={styles.foodImageFallback}>
                   <Text style={styles.foodEmoji}>🍽️</Text>
