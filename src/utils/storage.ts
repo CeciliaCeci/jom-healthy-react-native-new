@@ -60,13 +60,13 @@ export async function clearHealthRecords(): Promise<void> {
 }
 
 // --- HYDRATION STORAGE ---
-
 export interface HydrationRecord {
   id: string;
-  childId: number; // To track which child drank the water
-  date: string;    // Store as 'YYYY-MM-DD' for easy grouping
-  timestamp: number; // For exact time
-  amount: number;  // in ml
+  childId: number; 
+  date: string;    
+  timestamp: number; 
+  amount: number;  
+  drinkType: string; 
 }
 
 const HYDRATION_RECORDS_KEY = "hydrationRecords";

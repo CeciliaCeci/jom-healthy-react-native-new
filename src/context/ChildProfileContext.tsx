@@ -146,7 +146,7 @@ interface ChildProfileContextType {
   dailyWaterGoal: number;
   todayWaterIntake: number;
   hydrationHistory: any[];
-  addWater: (amount: number) => Promise<void>;
+  addWater: (amount: number, drinkType?: string) => Promise<void>;
 }
 
 const ChildProfileContext = createContext<ChildProfileContextType | undefined>(undefined);
@@ -634,8 +634,8 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
     loadHydrationData();
   }, [loadHydrationData]);
 
-  // Function to add water
-  const addWater = async (amount: number) => {
+  // Function to add water with drink type
+  const addWater = async (amount: number, drinkType: string = 'Water') => {
     if (!activeChild) return;
     const { saveHydrationRecord } = await import('../utils/storage');
     
@@ -644,7 +644,8 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
       childId: activeChild.id,
       date: new Date().toISOString().split('T')[0],
       timestamp: Date.now(),
-      amount: amount
+      amount: amount,
+      drinkType: drinkType
     };
 
     await saveHydrationRecord(newRecord);
