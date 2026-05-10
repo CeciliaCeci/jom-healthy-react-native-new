@@ -17,6 +17,7 @@ import VoiceSearchScreen from '../screens/VoiceSearchScreen';
 import CameraSearchScreen from '../screens/CameraSearchScreen';
 import FoodInfoScreen from '../screens/FoodInfoScreen';
 import { AiMealPlanGenerationProvider } from '../context/AiMealPlanGenerationContext';
+import HydrationScreen from '../screens/HydrationScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -97,6 +98,7 @@ export default function RootNavigator() {
           <Stack.Screen name="VoiceSearch" component={VoiceSearchScreen} />
           <Stack.Screen name="CameraSearch" component={CameraSearchScreen} />
           <Stack.Screen name="FoodInfo" component={FoodInfoScreen} />
+          <Stack.Screen name="Hydration" component={HydrationScreen} />
         </Stack.Navigator>
       </AiMealPlanGenerationProvider>
     </NavigationContainer>

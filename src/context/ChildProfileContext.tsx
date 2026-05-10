@@ -30,6 +30,11 @@ export interface ChildProfile {
   };
   preferences?: string[];
   allergies?: string[];
+  // --- Hydration Props ---
+  dailyWaterGoal: number;
+  todayWaterIntake: number;
+  hydrationHistory: any[];
+  addWater: (amount: number) => Promise<void>;
 }
 
 export interface Ingredient {
@@ -137,6 +142,11 @@ interface ChildProfileContextType {
   reloadFromStorage: () => Promise<void>;
   refreshFromStorage: () => Promise<void>;
   loadFromStorage: () => Promise<void>;
+  // --- Hydration Props ---
+  dailyWaterGoal: number;
+  todayWaterIntake: number;
+  hydrationHistory: any[];
+  addWater: (amount: number) => Promise<void>;
 }
 
 const ChildProfileContext = createContext<ChildProfileContextType | undefined>(undefined);
@@ -586,6 +596,61 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
 
   const isRecipeSaved = (id: string) => savedRecipes.some((item) => item.id === id);
 
+  // --- Hydration State ---
+  const [hydrationHistory, setHydrationHistory] = useState<any[]>([]);
+  const [todayWaterIntake, setTodayWaterIntake] = useState(0);
+
+  // User Story 1.2: Calculate age-based hydration target
+  const dailyWaterGoal = useMemo(() => {
+    if (!activeChild) return 1000; // Default
+    const age = activeChild.age;
+    if (age <= 3) return 1000;  // 1-3 years: 1000ml
+    if (age <= 8) return 1200;  // 4-8 years: 1200ml
+    if (age <= 13) return 1600; // 9-13 years: 1600ml
+    return 2000;                // 14+ years: 2000ml
+  }, [activeChild]);
+
+  // Load hydration data
+  const loadHydrationData = useCallback(async () => {
+    if (!activeChild) return;
+    const { loadHydrationRecords } = await import('../utils/storage');
+    const records = await loadHydrationRecords();
+    
+    // Filter records for the active child
+    const childRecords = records.filter(r => r.childId === activeChild.id);
+    setHydrationHistory(childRecords);
+
+    // Calculate today's total
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayTotal = childRecords
+      .filter(r => r.date === todayStr)
+      .reduce((sum, record) => sum + record.amount, 0);
+    
+    setTodayWaterIntake(todayTotal);
+  }, [activeChild]);
+
+  // Call loadHydrationData when active child changes
+  useEffect(() => {
+    loadHydrationData();
+  }, [loadHydrationData]);
+
+  // Function to add water
+  const addWater = async (amount: number) => {
+    if (!activeChild) return;
+    const { saveHydrationRecord } = await import('../utils/storage');
+    
+    const newRecord = {
+      id: Date.now().toString(),
+      childId: activeChild.id,
+      date: new Date().toISOString().split('T')[0],
+      timestamp: Date.now(),
+      amount: amount
+    };
+
+    await saveHydrationRecord(newRecord);
+    await loadHydrationData(); // Refresh state
+  };
+
   return (
     <ChildProfileContext.Provider
       value={{
@@ -621,6 +686,10 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
         reloadFromStorage: reloadChildProfileData,
         refreshFromStorage: reloadChildProfileData,
         loadFromStorage: reloadChildProfileData,
+        dailyWaterGoal,
+        todayWaterIntake,
+        hydrationHistory,
+        addWater,
       }}
     >
       {childrenProp}

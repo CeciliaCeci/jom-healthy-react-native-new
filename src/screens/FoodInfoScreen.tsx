@@ -210,6 +210,20 @@ export default function FoodInfoScreen() {
     };
   }, [food]);
 
+  const isBeverage = useMemo(() => {
+    if (!food) return false;
+    const name = (food.foodNameEn || food.foodNameCombine || '').toLowerCase();
+    const drinkKeywords = ['juice', 'drink', 'water', 'milk', 'tea', 'coffee', 'milo', 'soda', 'cola', 'beverage'];
+    return drinkKeywords.some(word => name.includes(word));
+  }, [food]);
+
+  // Check if it's a high sugar drink (> 5g per 100ml is generally considered high for kids)
+  const isHighSugarDrink = useMemo(() => {
+    if (!isBeverage || !food) return false;
+    // Assuming sugarG is per 100ml/g. Adjust if your API returns per serving
+    return (food.sugarG && food.sugarG > 5); 
+  }, [isBeverage, food]);
+
   const healthReason =
     language === 'zh'
       ? food?.healthReasonCn || food?.healthReasonEn
@@ -352,12 +366,51 @@ export default function FoodInfoScreen() {
                 </View>
 
                 <Text style={styles.statusEmoji}>{statusConfig.emoji}</Text>
+                
               </View>
 
               <Text style={styles.statusDescription}>
                 {statusConfig.description}
               </Text>
             </View>
+
+            {/* --- Drink Evaluation --- */}
+            {isBeverage && (
+              <View style={{ marginTop: 20 }}>
+                {isHighSugarDrink ? (
+                  <View style={{ backgroundColor: '#FEF2F2', padding: 16, borderRadius: 12, borderColor: '#FCA5A5', borderWidth: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <Ionicons name="warning" size={24} color="#EF4444" />
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#991B1B', marginLeft: 8 }}>
+                        High Sugar Warning
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#B91C1C', marginBottom: 12 }}>
+                      {/* Notice I changed foodDetails to food here! */}
+                      This drink contains high sugar ({food?.sugarG || 0}g). Sweet drinks can lead to tooth decay and poor health in children.
+                    </Text>
+                    
+                    {/* Healthy Recommendations */}
+                    <Text style={{ fontWeight: 'bold', color: '#7F1D1D', marginBottom: 8 }}>
+                      Recommended Healthier Alternatives:
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      <Text style={{ backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden', color: '#15803D', fontWeight: 'bold' }}>💧 Plain Water</Text>
+                      <Text style={{ backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden', color: '#15803D', fontWeight: 'bold' }}>🥛 Fresh Milk</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ backgroundColor: '#F0FDF4', padding: 16, borderRadius: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#166534', marginLeft: 8 }}>
+                        Great Hydration Choice!
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
 
             <View>
               <Text style={styles.sectionTitle}>{getText('Nutrition Facts', '营养成分', 'Fakta Nutrisi')}</Text>

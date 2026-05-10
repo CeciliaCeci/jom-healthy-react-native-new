@@ -59,4 +59,33 @@ export async function clearHealthRecords(): Promise<void> {
   await AsyncStorage.removeItem(HEALTH_RECORDS_KEY);
 }
 
+// --- HYDRATION STORAGE ---
+
+export interface HydrationRecord {
+  id: string;
+  childId: number; // To track which child drank the water
+  date: string;    // Store as 'YYYY-MM-DD' for easy grouping
+  timestamp: number; // For exact time
+  amount: number;  // in ml
+}
+
+const HYDRATION_RECORDS_KEY = "hydrationRecords";
+
+export async function loadHydrationRecords(): Promise<HydrationRecord[]> {
+  try {
+    const stored = await AsyncStorage.getItem(HYDRATION_RECORDS_KEY);
+    if (!stored) return [];
+    return JSON.parse(stored) as HydrationRecord[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveHydrationRecord(record: HydrationRecord): Promise<HydrationRecord[]> {
+  const records = await loadHydrationRecords();
+  const updatedRecords = [record, ...records]; 
+  await AsyncStorage.setItem(HYDRATION_RECORDS_KEY, JSON.stringify(updatedRecords));
+  return updatedRecords;
+}
+
 export default {};

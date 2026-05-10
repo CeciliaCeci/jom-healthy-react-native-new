@@ -61,6 +61,9 @@ export default function HomeScreen() {
     switchToChild,
     nutritionProgress,
     getTip,
+    todayWaterIntake, 
+    dailyWaterGoal, 
+    addWater
   } = useChildProfile();
 
   const [showLanguage, setShowLanguage] = useState(false);
@@ -651,6 +654,54 @@ export default function HomeScreen() {
             </>
           )}
 
+          {/* Insert this right ABOVE the Growth Overview Card */}
+          {activeChild && (
+            <Card style={styles.hydrationCard}>
+              <View style={styles.hydrationHeader}>
+                <View style={styles.hydrationTitleRow}>
+                  <Ionicons name="water" size={20} color="#3B82F6" />
+                  <Text style={styles.hydrationTitle}>
+                    {getText('Daily Hydration', '每日饮水', 'Penghidratan Harian')}
+                  </Text>
+                </View>
+                <Pressable 
+                  style={styles.hydrationDetailBtn}
+                  onPress={() => navigation.navigate('Hydration')} 
+                >
+                  <Text style={styles.hydrationDetailText}>
+                    {getText('Details', '详情', 'Butiran')}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#3B82F6" />
+                </Pressable>
+              </View>
+
+              {/* Live Progress linked to Context! */}
+              <View style={styles.hydrationProgressWrap}>
+                <View style={styles.hydrationBarBg}>
+                  <View 
+                    style={[
+                      styles.hydrationBarFill, 
+                      { width: `${Math.min((todayWaterIntake / dailyWaterGoal) * 100, 100)}%` }
+                    ]} 
+                  /> 
+                </View>
+                <Text style={styles.hydrationText}>
+                  <Text style={styles.hydrationCurrent}>{todayWaterIntake}ml</Text> / {dailyWaterGoal}ml
+                </Text>
+              </View>
+
+              {/* Active Buttons linked to Context! */}
+              <View style={styles.hydrationActions}>
+                <Pressable style={styles.addWaterBtn} onPress={() => addWater(100)}>
+                  <Text style={styles.addWaterText}>+ 100ml</Text>
+                </Pressable>
+                <Pressable style={styles.addWaterBtn} onPress={() => addWater(250)}>
+                  <Text style={styles.addWaterText}>+ 250ml</Text>
+                </Pressable>
+              </View>
+            </Card>
+          )}
+          
           {/* Growth Overview */}
           <Pressable
             style={styles.growthOverviewCard}
@@ -1272,6 +1323,85 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     lineHeight: 18,
     marginTop: 8,
+  },
+  hydrationCard: {
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF', // Light blue background
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  hydrationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  hydrationTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hydrationTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  hydrationDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  hydrationDetailText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  hydrationProgressWrap: {
+    marginBottom: 16,
+  },
+  hydrationBarBg: {
+    height: 12,
+    backgroundColor: '#DBEAFE',
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  hydrationBarFill: {
+    height: '100%',
+    backgroundColor: '#3B82F6',
+    borderRadius: 6,
+  },
+  hydrationText: {
+    fontSize: 13,
+    color: '#60A5FA',
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+  hydrationCurrent: {
+    color: '#2563EB',
+    fontWeight: '800',
+  },
+  hydrationActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  addWaterBtn: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#3B82F6',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  addWaterText: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 

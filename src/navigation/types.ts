@@ -19,6 +19,7 @@ export type RootStackParamList = {
   VoiceSearch: undefined;
   CameraSearch: undefined;
   FoodInfo: { foodName?: string; source?: 'search' | 'voice' | 'camera' } | undefined;
+  Hydration: undefined;
 };
 
 export type MainTabParamList = {
