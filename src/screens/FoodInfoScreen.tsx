@@ -210,11 +210,15 @@ export default function FoodInfoScreen() {
     };
   }, [food]);
 
+  // Check if the item is a beverage
   const isBeverage = useMemo(() => {
     if (!food) return false;
     const name = (food.foodNameEn || food.foodNameCombine || '').toLowerCase();
     const drinkKeywords = ['juice', 'drink', 'water', 'milk', 'tea', 'coffee', 'milo', 'soda', 'cola', 'beverage'];
-    return drinkKeywords.some(word => name.includes(word));
+    
+    // Use Regex \b (word boundary) to match exact words only!
+    // This stops "steak" from matching "tea", or "watermelon" from matching "water"
+    return drinkKeywords.some(word => new RegExp(`\\b${word}\\b`).test(name));
   }, [food]);
 
   // Check if it's a high sugar drink (> 5g per 100ml is generally considered high for kids)
@@ -386,7 +390,6 @@ export default function FoodInfoScreen() {
                       </Text>
                     </View>
                     <Text style={{ color: '#B91C1C', marginBottom: 12 }}>
-                      {/* Notice I changed foodDetails to food here! */}
                       This drink contains high sugar ({food?.sugarG || 0}g). Sweet drinks can lead to tooth decay and poor health in children.
                     </Text>
                     
