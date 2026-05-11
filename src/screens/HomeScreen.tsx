@@ -63,7 +63,10 @@ export default function HomeScreen() {
     getTip,
     todayWaterIntake, 
     dailyWaterGoal, 
-    addWater
+    addWater, 
+    todayActivityMinutes, 
+    dailyActivityGoal,
+    addActivity,
   } = useChildProfile();
 
   const [showLanguage, setShowLanguage] = useState(false);
@@ -673,7 +676,7 @@ export default function HomeScreen() {
                   </Text>
                   <Ionicons name="chevron-forward" size={16} color="#3B82F6" />
                 </Pressable>
-              </View>
+              </View>      
 
               {/* Live Progress linked to Context! */}
               <View style={styles.hydrationProgressWrap}>
@@ -697,6 +700,53 @@ export default function HomeScreen() {
                 </Pressable>
                 <Pressable style={styles.addWaterBtn} onPress={() => addWater(250)}>
                   <Text style={styles.addWaterText}>+ 250ml</Text>
+                </Pressable>
+              </View>
+            </Card>
+          )}
+
+          {activeChild && (
+            <Card style={styles.activityCard}>
+              <View style={styles.activityHeader}>
+                <View style={styles.activityTitleRow}>
+                  <Ionicons name="fitness" size={20} color="#F97316" />
+                  <Text style={styles.activityTitle}>
+                    {getText('Daily Activity', '每日运动', 'Aktiviti Harian')}
+                  </Text>
+                </View>
+                <Pressable 
+                  style={styles.activityDetailBtn}
+                  onPress={() => navigation.navigate('PhysicalActivity')} 
+                >
+                  <Text style={styles.activityDetailText}>
+                    {getText('Details', '详情', 'Butiran')}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#F97316" />
+                </Pressable>
+              </View>
+
+              {/* Live Progress linked to Context! */}
+              <View style={styles.activityProgressWrap}>
+                <View style={styles.activityBarBg}>
+                  <View 
+                    style={[
+                      styles.activityBarFill, 
+                      { width: `${Math.min((todayActivityMinutes / dailyActivityGoal) * 100, 100)}%` }
+                    ]} 
+                  /> 
+                </View>
+                <Text style={styles.activityText}>
+                  <Text style={styles.activityCurrent}>{todayActivityMinutes} min</Text> / {dailyActivityGoal} min
+                </Text>
+              </View>
+
+              {/* Quick Add Buttons linked to Context! */}
+              <View style={styles.activityActions}>
+                <Pressable style={styles.addActivityBtn} onPress={() => addActivity(15, 'Play')}>
+                  <Text style={styles.addActivityText}>+ 15 min</Text>
+                </Pressable>
+                <Pressable style={styles.addActivityBtn} onPress={() => addActivity(30, 'Exercise')}>
+                  <Text style={styles.addActivityText}>+ 30 min</Text>
                 </Pressable>
               </View>
             </Card>
@@ -1401,6 +1451,87 @@ const styles = StyleSheet.create({
   addWaterText: {
     color: '#2563EB',
     fontWeight: '700',
+    fontSize: 14,
+  },
+  activityCard: {
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  activityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  activityTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  activityTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  activityDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activityDetailText: {
+    fontSize: 14,
+    color: '#F97316', // Orange
+    fontWeight: '600',
+  },
+  activityProgressWrap: {
+    marginBottom: 16,
+  },
+  activityBarBg: {
+    height: 12,
+    backgroundColor: '#FED7AA', // Very light orange bg
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  activityBarFill: {
+    height: '100%',
+    backgroundColor: '#F97316', // Bright Orange fill
+    borderRadius: 6,
+  },
+  activityText: {
+    fontSize: 13,
+    color: '#FF9D4D',
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+  activityCurrent: {
+    fontWeight: '800',
+    color: '#F97316',
+  },
+  activityActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addActivityBtn: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FFEDD5',
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#F97316',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  addActivityText: {
+    color: '#9A3412', // Darker orange-brown for text readability
+    fontWeight: '600',
     fontSize: 14,
   },
 });

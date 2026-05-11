@@ -88,4 +88,44 @@ export async function saveHydrationRecord(record: HydrationRecord): Promise<Hydr
   return updatedRecords;
 }
 
+export interface ActivityRecord {
+  id: string;
+  childId: number;
+  date: string;      // YYYY-MM-DD
+  timestamp: number;
+  minutes: number;
+  activityType: string;
+}
+
+const ACTIVITY_RECORDS_KEY = "activityRecords";
+
+/**
+ * Loads all physical activity records from storage
+ */
+export async function loadActivityRecords(): Promise<ActivityRecord[]> {
+  try {
+    const stored = await AsyncStorage.getItem(ACTIVITY_RECORDS_KEY);
+    if (!stored) return [];
+    return JSON.parse(stored) as ActivityRecord[];
+  } catch (error) {
+    console.error("Error loading activity records:", error);
+    return [];
+  }
+}
+
+/**
+ * Saves a new activity record and returns the updated list
+ */
+export async function saveActivityRecord(record: ActivityRecord): Promise<ActivityRecord[]> {
+  try {
+    const records = await loadActivityRecords();
+    const updatedRecords = [record, ...records];
+    await AsyncStorage.setItem(ACTIVITY_RECORDS_KEY, JSON.stringify(updatedRecords));
+    return updatedRecords;
+  } catch (error) {
+    console.error("Error saving activity record:", error);
+    return [];
+  }
+}
+
 export default {};

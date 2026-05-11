@@ -18,6 +18,7 @@ import CameraSearchScreen from '../screens/CameraSearchScreen';
 import FoodInfoScreen from '../screens/FoodInfoScreen';
 import { AiMealPlanGenerationProvider } from '../context/AiMealPlanGenerationContext';
 import HydrationScreen from '../screens/HydrationScreen';
+import PhysicalActivityScreen from '../screens/PhysicalActivityScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -99,6 +100,7 @@ export default function RootNavigator() {
           <Stack.Screen name="CameraSearch" component={CameraSearchScreen} />
           <Stack.Screen name="FoodInfo" component={FoodInfoScreen} />
           <Stack.Screen name="Hydration" component={HydrationScreen} />
+          <Stack.Screen name="PhysicalActivity" component={PhysicalActivityScreen} />
         </Stack.Navigator>
       </AiMealPlanGenerationProvider>
     </NavigationContainer>

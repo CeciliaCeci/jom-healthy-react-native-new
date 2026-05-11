@@ -35,6 +35,10 @@ export interface ChildProfile {
   todayWaterIntake: number;
   hydrationHistory: any[];
   addWater: (amount: number) => Promise<void>;
+  dailyActivityGoal: number;
+  todayActivityMinutes: number;
+  activityHistory: any[];
+  addActivity: (minutes: number) => Promise<void>;
 }
 
 export interface Ingredient {
@@ -147,6 +151,10 @@ interface ChildProfileContextType {
   todayWaterIntake: number;
   hydrationHistory: any[];
   addWater: (amount: number, drinkType?: string) => Promise<void>;
+  dailyActivityGoal: number;
+  todayActivityMinutes: number;
+  activityHistory: any[];
+  addActivity: (minutes: number, activityType?: string) => Promise<void>;
 }
 
 const ChildProfileContext = createContext<ChildProfileContextType | undefined>(undefined);
@@ -652,6 +660,49 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
     await loadHydrationData(); // Refresh state
   };
 
+  // --- Activity State ---
+const [activityHistory, setActivityHistory] = useState<any[]>([]);
+const [todayActivityMinutes, setTodayActivityMinutes] = useState(0);
+const dailyActivityGoal = 60; 
+
+const loadActivityData = useCallback(async () => {
+  if (!activeChild) return;
+  // Dynamic import to match your hydration style
+  const { loadActivityRecords } = await import('../utils/storage');
+  const records = await loadActivityRecords();
+  
+  const childRecords = records.filter(r => r.childId === activeChild.id);
+  setActivityHistory(childRecords);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayTotal = childRecords
+    .filter(r => r.date === todayStr)
+    .reduce((sum, record) => sum + record.minutes, 0);
+  
+  setTodayActivityMinutes(todayTotal);
+}, [activeChild]);
+
+useEffect(() => {
+  loadActivityData();
+}, [loadActivityData]);
+
+const addActivity = async (minutes: number, activityType: string = 'General Play') => {
+  if (!activeChild) return;
+  const { saveActivityRecord } = await import('../utils/storage');
+  
+  const newRecord = {
+    id: Date.now().toString(),
+    childId: activeChild.id,
+    date: new Date().toISOString().split('T')[0],
+    timestamp: Date.now(),
+    minutes: minutes,
+    activityType: activityType
+  };
+
+  await saveActivityRecord(newRecord);
+  await loadActivityData(); 
+};
+
   return (
     <ChildProfileContext.Provider
       value={{
@@ -691,6 +742,10 @@ export function ChildProfileProvider({ children: childrenProp }: { children: Rea
         todayWaterIntake,
         hydrationHistory,
         addWater,
+        dailyActivityGoal,
+        todayActivityMinutes,
+        activityHistory,
+        addActivity,
       }}
     >
       {childrenProp}
