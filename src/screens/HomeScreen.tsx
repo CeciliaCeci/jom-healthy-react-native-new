@@ -706,48 +706,48 @@ export default function HomeScreen() {
           )}
 
           {activeChild && (
-            <Card style={styles.activityCard}>
-              <View style={styles.activityHeader}>
-                <View style={styles.activityTitleRow}>
-                  <Ionicons name="fitness" size={20} color="#F97316" />
-                  <Text style={styles.activityTitle}>
-                    {getText('Daily Activity', '每日运动', 'Aktiviti Harian')}
-                  </Text>
+            <Card style={styles.newActivityCard}>
+              <View style={styles.cardTopRow}>
+                {/* Left Icon Section */}
+                <View style={styles.iconContainer}>
+                  <Image source={require('../assets/images/physical-activity-icon.jpeg')} style={styles.activityImage} resizeMode="cover" />
                 </View>
+
+                {/* Middle Info Section */}
+                <View style={styles.headerInfo}>
+                  <Text style={styles.activityTitleText}>Activity</Text>
+                  <View style={styles.statusBadgeActivity}>
+                    <Text style={styles.statusText}>
+                      {todayActivityMinutes < dailyActivityGoal / 2 ? 'Low Activity' : 'Active'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Right Navigation Button */}
                 <Pressable 
-                  style={styles.activityDetailBtn}
-                  onPress={() => navigation.navigate('PhysicalActivity')} 
+                  style={styles.circleChevron} 
+                  onPress={() => navigation.navigate('PhysicalActivity')}
                 >
-                  <Text style={styles.activityDetailText}>
-                    {getText('Details', '详情', 'Butiran')}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#F97316" />
+                  <Ionicons name="chevron-forward" size={18} color="#10B981" />
                 </Pressable>
               </View>
 
-              {/* Live Progress linked to Context! */}
-              <View style={styles.activityProgressWrap}>
-                <View style={styles.activityBarBg}>
-                  <View 
-                    style={[
-                      styles.activityBarFill, 
-                      { width: `${Math.min((todayActivityMinutes / dailyActivityGoal) * 100, 100)}%` }
-                    ]} 
-                  /> 
-                </View>
-                <Text style={styles.activityText}>
-                  <Text style={styles.activityCurrent}>{todayActivityMinutes} min</Text> / {dailyActivityGoal} min
+              {/* Progress Label and Values Row */}
+              <View style={styles.progressLabelRow}>
+                <Text style={styles.progressLabel}>Progress</Text>
+                <Text style={styles.progressValueText}>
+                  {todayActivityMinutes} / {dailyActivityGoal} mins
                 </Text>
               </View>
 
-              {/* Quick Add Buttons linked to Context! */}
-              <View style={styles.activityActions}>
-                <Pressable style={styles.addActivityBtn} onPress={() => addActivity(15, 'Play')}>
-                  <Text style={styles.addActivityText}>+ 15 min</Text>
-                </Pressable>
-                <Pressable style={styles.addActivityBtn} onPress={() => addActivity(30, 'Exercise')}>
-                  <Text style={styles.addActivityText}>+ 30 min</Text>
-                </Pressable>
+              {/* Thin Progress Bar */}
+              <View style={styles.thinBarBg}>
+                <View 
+                  style={[
+                    styles.thinBarFill, 
+                    { width: `${Math.min((todayActivityMinutes / dailyActivityGoal) * 100, 100)}%` }
+                  ]} 
+                /> 
               </View>
             </Card>
           )}
@@ -1453,86 +1453,86 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  activityCard: {
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#FFF7ED',
-    borderColor: '#FED7AA',
-    borderWidth: 1,
+  newActivityCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
     marginBottom: 16,
+    // Add shadow or use your Card component's default
   },
-  activityHeader: {
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  iconContainer: {
+    width: 54,
+    height: 54,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 14,
+    overflow: 'hidden', // Clips the image to your border radius
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  activityImage: {
+    width: '100%',
+    height: '100%',
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  activityTitleText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  statusBadgeActivity: {
+    backgroundColor: '#FEF3C6', // Very light orange
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  statusText: {
+    color: '#BB4D00', // Dark orange
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  circleChevron: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#F0FDF4', // Very pale green
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  activityTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  activityTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  activityDetailBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  activityDetailText: {
-    fontSize: 14,
-    color: '#F97316', // Orange
-    fontWeight: '600',
-  },
-  activityProgressWrap: {
-    marginBottom: 16,
-  },
-  activityBarBg: {
-    height: 12,
-    backgroundColor: '#FED7AA', // Very light orange bg
-    borderRadius: 6,
-    overflow: 'hidden',
     marginBottom: 8,
   },
-  activityBarFill: {
+  progressLabel: {
+    fontSize: 15,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  progressValueText: {
+    fontSize: 15,
+    color: '#1E293B',
+    fontWeight: '700',
+  },
+  thinBarBg: {
+    height: 8,
+    backgroundColor: '#F1F5F9', // Light gray track
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  thinBarFill: {
     height: '100%',
-    backgroundColor: '#F97316', // Bright Orange fill
-    borderRadius: 6,
-  },
-  activityText: {
-    fontSize: 13,
-    color: '#FF9D4D',
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-  activityCurrent: {
-    fontWeight: '800',
-    color: '#F97316',
-  },
-  activityActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  addActivityBtn: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#FFEDD5',
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    shadowColor: '#F97316',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  addActivityText: {
-    color: '#9A3412', // Darker orange-brown for text readability
-    fontWeight: '600',
-    fontSize: 14,
+    backgroundColor: '#10B981', // Green fill
   },
 });
 
