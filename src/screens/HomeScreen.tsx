@@ -43,6 +43,7 @@ import Markdown from 'react-native-markdown-display';
 import { FileText, X, ExternalLink } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FloatingAIChat from "../components/FloatingAIChat";
+import { useActivity } from '../context/PhysicalActivityContext';
 
 type FoodSuggestion = {
   label: string;
@@ -398,6 +399,11 @@ export default function HomeScreen() {
     return { points, pointsString, width, height };
   }, [chartRecords]);
   
+  // Pull the synced data from Context
+  const { todayTotal, dailyGoal } = useActivity();
+  
+  // Calculate progress percentage
+  const progressPercent = (todayTotal / dailyGoal) * 100;
 
   return (
     <>
@@ -718,7 +724,7 @@ export default function HomeScreen() {
                   <Text style={styles.activityTitleText}>Activity</Text>
                   <View style={styles.statusBadgeActivity}>
                     <Text style={styles.statusText}>
-                      {todayActivityMinutes < dailyActivityGoal / 2 ? 'Low Activity' : 'Active'}
+                      {todayTotal < dailyGoal / 2 ? 'Low Activity' : 'Active'}
                     </Text>
                   </View>
                 </View>
@@ -736,7 +742,7 @@ export default function HomeScreen() {
               <View style={styles.progressLabelRow}>
                 <Text style={styles.progressLabel}>Progress</Text>
                 <Text style={styles.progressValueText}>
-                  {todayActivityMinutes} / {dailyActivityGoal} mins
+                  {todayTotal} / {dailyGoal} mins
                 </Text>
               </View>
 
@@ -745,7 +751,7 @@ export default function HomeScreen() {
                 <View 
                   style={[
                     styles.thinBarFill, 
-                    { width: `${Math.min((todayActivityMinutes / dailyActivityGoal) * 100, 100)}%` }
+                    { width: `${Math.min((todayTotal / dailyGoal) * 100, 100)}%` }
                   ]} 
                 /> 
               </View>
